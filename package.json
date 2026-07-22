@@ -1,0 +1,22 @@
+{
+  "name": "score-frame-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node -e \"require('fs').writeFileSync('build-test/package.json', '{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test \"build-test/**/*.test.js\"",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.286",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

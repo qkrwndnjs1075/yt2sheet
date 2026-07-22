@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "build-test",
+    "noEmit": false,
+    "types": ["node", "chrome"]
+  },
+  "include": [
+    "src/shared/**/*.ts",
+    "src/offscreen/layout/**/*.ts",
+    "src/offscreen/frame-sink.ts",
+    "src/offscreen/debug-frame-sink.ts",
+    "src/background/score-export-download.ts",
+    "tests/**/*.ts"
+  ]
+}

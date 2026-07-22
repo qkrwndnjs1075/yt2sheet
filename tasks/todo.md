@@ -1,0 +1,774 @@
+# ROI Score Export Pipeline
+
+# G022 Transient YouTube Overlay Suppression
+
+## Plan
+
+- [x] Lock a failing regression contract that capture start suppresses YouTube player controls and the volume bezel.
+- [x] Restore the player UI when capture stops, errors, is restarted, or reaches the natural video end.
+- [x] Keep the dynamically injected video probe self-contained and safe across repeated injection.
+- [x] Run the focused regression, TypeScript diagnostics, no-excuse audit, full `npm run verify`, and built-content-script checks without Visual QA.
+
+## Review
+
+- Root cause: the tab-capture stream included YouTube's DOM player chrome before ROI sampling, so the same notation could be fingerprinted and stored once with controls and once without them. The small volume tooltip could also survive as part of the representative image.
+- The video probe now injects capture-scoped suppression for top/bottom chrome, gradients, tooltips, and the volume bezel before its first timing tick.
+- Every probe stop path removes the suppression style, including restart, explicit stop/error cleanup, and natural video end.
+- Regression proof: the focused lifecycle test failed before the implementation and passed afterward.
+- Verification: no-excuse audit passed for both changed TypeScript files; `npm run verify` passed with typecheck, 147 tests, and the Vite production build; the built script passed `node --check`, contained all required selectors, had no static imports, and passed a nonvisual START/STOP VM lifecycle harness.
+- Visual QA was intentionally not run per the user's request.
+
+## Plan
+
+- [x] Inspect the existing ROI identity implementation and tests.
+- [x] Add explicit score identity config, feature flags, and shared capture/page types.
+- [x] Add repository/service surfaces for accepted cluster upsert and representative image handling.
+- [x] Add page chunking, page rendering, PNG export, and PDF export.
+- [x] Add a ScoreIdentityDetector orchestrator that connects fingerprint, quality, blob storage, clustering, capture, and debug logging.
+- [x] Add regression tests for unique cluster storage, five-per-page chunking, PNG/PDF export, and orchestrator behavior.
+- [x] Run typecheck, tests, and build.
+- [x] Run final cleanup/review gate and checkpoint OMX ultragoal.
+
+## Review
+
+- Added explicit ROI identity config and feature flags.
+- Added capture/page output types, accepted-cluster repositories, thumbnail generation, unique capture upsert, page chunking/rendering, PNG export, PDF export, and ScoreIdentityDetector orchestration.
+- Updated ScoreClusterer to carry actual representative image blob IDs through pending and representative replacement paths.
+- Added regression tests for config flags, representative blob IDs, clusterId upsert, five-per-page dedupe, PNG/PDF export, and duplicate raw sample cleanup.
+- Review follow-ups resolved: export orchestration, missing metadata failure, explicit pending resolution, export page image boundary, stale representative thumbnail cleanup, and pending duplicate image cleanup.
+- Verification: `npm run verify` passed after cleanup with typecheck, 57 tests, and Vite build.
+
+# User-Facing Export UI
+
+## Plan
+
+- [x] Inspect the existing capture stop flow and debug-state score storage.
+- [x] Add a user-facing export-ready message after capture stops.
+- [x] Add a YouTube-page export panel with PDF and PNG actions.
+- [x] Generate downloadable PDF/PNG files from accepted unique score images.
+- [x] Store representative ROI images at export quality instead of preview quality.
+- [x] Add focused regression tests for export chunking and PDF creation.
+- [x] Run typecheck, tests, and build.
+
+## Review
+
+- Added a YouTube-page export panel that appears after capture stops with PDF and PNG buttons.
+- Added background export handling that downloads one PDF or multiple PNG page files through Chrome downloads.
+- Added the `downloads` extension permission for user-initiated export files.
+- Changed accepted representative score images from reduced JPEG previews to full ROI PNG data URLs for export quality.
+- Added regression tests for export dedupe/sort/chunk behavior, PDF generation, and filename sanitizing.
+- Verification: `npm run verify` passed with typecheck, 60 tests, and Vite production build.
+
+# G009 User PDF Quality Fixes
+
+## Best-Practice Research
+
+- MuseScore Studio Handbook, "Score size and spacing" / "Pages and vertical spacing": page layout should control margins, staff size, and vertical spacing; sparse pages can look awkward when systems are spread out to fill the page, and reducing system distance or forcing extra space to the bottom is a supported approach.
+- LilyPond Notation Reference 2.26/2.27: vertical spacing is governed by page size/margins, system spacing, and staff spacing; flexible spacing uses `basic-distance`, `minimum-distance`, and `padding`, so spacing should compress within safe whitespace instead of uniformly stretching sparse pages.
+
+## Plan
+
+- [x] Add G009 ultragoal story for user-facing PDF quality issues.
+- [x] Fix ROI coordinate conversion to account for the actual rendered video content box.
+- [x] Crop accepted export representatives to staff-line anchored score content inside ROI.
+- [x] Make fingerprint comparison use staff-line anchored content so side/decorative image changes do not create duplicate clusters.
+- [x] Replace fixed-slot page layout with actual score-height stacking and bounded gaps.
+- [x] Add regression tests for ROI letterbox mapping, side-image duplicate robustness, staff-content export cropping, and compact page layout.
+- [x] Run `npm run verify`.
+- [x] Run final cleanup/review gate.
+- [x] Checkpoint G009.
+
+## Review
+
+- Added actual-video content rectangle mapping so manual ROI coordinates ignore YouTube letterbox/pillarbox bars.
+- Added staff-line anchored score-content extraction for fingerprinting and representative export images.
+- Added compact page placement shared by PDF/PNG export paths, using bounded configured gaps instead of sparse page justification.
+- Added regression tests for letterbox ROI mapping, side-image duplicate robustness, staff-content cropping, compact page layout, and production ROI export-image cropping.
+- Verification: `npm run verify` passed with typecheck, 66 tests, and Vite production build after the final review follow-up.
+- Review gate: ai-slop-cleaner scoped scan found no fallback/workaround/TODO slop in changed files; independent code-reviewer found no blocking code issues after follow-up; independent architect returned CLEAR.
+- Ultragoal checkpoint: G009 completed; microgoal ledger is 9/9 complete.
+
+# G010 ROI Normal Mode and False Duplicate Fixes
+
+## Plan
+
+- [x] Re-check the current ROI crop, score identity, and page layout implementation against the user's reproduced PDF issues.
+- [x] Map manual video-frame ROI coordinates into the actual tab-capture bitmap before cropping.
+- [x] Preserve backward compatibility for existing stored ROI configs that do not include source frame dimensions.
+- [x] Tighten same-score matching so visually different notation does not silently replace an existing representative image.
+- [x] Keep compact print layout behavior and add regression coverage for it where needed.
+- [x] Run targeted tests and full verification.
+
+## Review
+
+- Added `frameSize` to newly saved manual ROI configs so frame-space selections can be mapped back into tab-capture bitmap coordinates.
+- Added shared ROI geometry conversion from video frame coordinates to viewport and capture bitmap coordinates.
+- Updated ROI cropping to use `videoRect`, `viewport`, and stored source frame dimensions when available, with fallback for older stored ROI configs.
+- Tightened `same` matching with a separate horizontal projection threshold, while keeping side imagery outside staff content ignored.
+- Reduced score page gap from 24px to 16px for denser print output.
+- Added regression coverage for normal YouTube layout ROI offset cropping and changed-notation false duplicate prevention.
+- Verification: `npm run verify` passed with typecheck, 69 tests, and Vite production build.
+
+# G011 End Overlay Export Gate
+
+## Plan
+
+- [x] Add configurable near-end gate thresholds for rule-first duplicate/export handling.
+- [x] Pass video duration and near-end metadata from frame sampling into ROI identity.
+- [x] Add a local end-candidate gate before cluster creation so near-end `different` samples are held.
+- [x] Confirm genuine end-score changes only after a consecutive score-like sample.
+- [x] Discard overlay-like or unconfirmed end candidates from PDF/PNG export while keeping debug metadata.
+- [x] Add regression tests for held, confirmed, overlay-discarded, and stop-flushed end candidates.
+- [x] Run full verification.
+
+## Review
+
+- Added a local end-candidate gate before accepted cluster creation.
+- Near-end `different` samples are now held until one consecutive score-like confirmation.
+- Overlay-like end samples and unconfirmed stop-time candidates are excluded from export.
+- Debug identity metadata now includes `endGate`, `endGateReason`, `exported`, and pending end-candidate count.
+- Verification: `npm run verify` passed with typecheck, 76 tests, and Vite production build.
+
+# G012 ROI Drag Selection Regression
+
+## Plan
+
+- [x] Inspect the current ROI selection overlay and drag event flow.
+- [x] Compare recent changes that could block pointer/mouse interaction.
+- [x] Reproduce or simulate the broken drag path with a focused regression test.
+- [x] Fix the root cause with the smallest scoped change.
+- [x] Run targeted tests and full verification.
+
+## Review
+
+- Root cause: the built dynamic content script `dist/src/content/roi-selector.js` started with a static ES module import from a shared asset chunk, but it is injected with `chrome.scripting.executeScript({ files })`; that can prevent the ROI selector listener/overlay drag code from running as a self-contained injected script.
+- Kept the ROI selector self-contained by moving the small drag and ROI geometry helpers it needs into `src/content/roi-selector.ts`, while preserving type-only imports.
+- Added a regression test that fails if dynamically injected content script sources add runtime imports.
+- Verification: `npm run typecheck`, `npm test` with 77 passing tests, `npm run build`, no static import in `dist/src/content/roi-selector.js` or `dist/src/content/video-probe.js`, `node --check` for both built content scripts, and final `npm run verify` all passed.
+
+# G013 ROI Selector Not Appearing Follow-up
+
+## Plan
+
+- [x] Re-check the complete start-to-selector path after the user reports the selector still does not appear.
+- [x] Harden the selector overlay so the UI appears even if stylesheet injection fails.
+- [x] Make stale active session state recoverable instead of silently preventing a new selector.
+- [x] Add focused regression coverage for the hardened behavior.
+- [x] Run full verification.
+
+## Review
+
+- Added inline fallback styles to the ROI selector overlay, selection rectangle, toolbar, and buttons so the area picker is visible even if `chrome.scripting.insertCSS` does not apply the stylesheet.
+- Added stale transitional session recovery for `starting`/`stopping` sessions older than 60 seconds, so an interrupted previous start cannot silently block a new ROI selector.
+- Added regression coverage that dynamically injected content scripts remain self-contained and the ROI selector keeps inline fallback styles.
+- Verification: `npm run typecheck`, `npm test` with 78 passing tests, `npm run build`, built content scripts with 0 static imports, `node --check` for built content scripts, and final `npm run verify` all passed.
+
+# G014 Repeated Content Script Injection SyntaxError
+
+## Plan
+
+- [x] Use the reported `Identifier has already been declared` stack trace to identify the exact injection failure.
+- [x] Wrap dynamically injected content script bundles in an isolated function scope so repeated injection cannot redeclare top-level identifiers.
+- [x] Add regression coverage against unwrapped built content script output.
+- [x] Run build and full verification.
+
+## Review
+
+- Root cause: `chrome.scripting.executeScript` can inject the same content script into the same YouTube tab more than once, and the built classic scripts had top-level `const`/`function` declarations such as `n` and `I`, causing `Identifier has already been declared` before the listeners could run.
+- Added a Vite build plugin that wraps `src/content/video-probe.js` and `src/content/roi-selector.js` in an IIFE, isolating minified identifiers on every injection.
+- Added regression coverage that the wrapper remains configured for both dynamically injected content script bundles.
+- Verification: `npm run typecheck`, `npm test` with 79 passing tests, `npm run build`, built content scripts start with `(()=>{...})();`, built content scripts have 0 static imports, `node --check` passed for both built content scripts, and final `npm run verify` passed.
+
+# G015 Tab Capture Startup After ROI Selection
+
+## Plan
+
+- [x] Use the reported background error context to identify the post-ROI startup failure.
+- [x] Move tab capture stream-id acquisition into the extension action user-gesture window before ROI selection.
+- [x] Improve CaptureError logging so object errors do not appear as `[object Object]`.
+- [x] Add focused regression coverage for the call order and error formatting.
+- [x] Run full verification.
+
+## Review
+
+- Root cause: `chrome.tabCapture.getMediaStreamId()` was called only after the user completed ROI selection. Chrome requires tabCapture to be called after extension invocation/user gesture, so delaying it past the ROI interaction can fail with `TAB_CAPTURE_DENIED`.
+- Moved stream-id acquisition to the start of `startSession`, before content script injection and ROI selection, then reused that stream id when starting offscreen capture.
+- Improved `toErrorMessage` so CaptureError objects log as `CODE: message (cause: ..., session: ...)` instead of `[object Object]`.
+- Added regression coverage for tab capture call ordering and CaptureError formatting.
+- Verification: official Chrome tabCapture docs checked for user-invocation requirement; `npm run typecheck`, `npm test` with 81 passing tests, `npm run build`, and final `npm run verify` all passed.
+
+# G016 ROI Cancellation Logging
+
+## Plan
+
+- [x] Identify why `ROI_SELECTION_CANCELLED` is shown as `Action click failed`.
+- [x] Treat ROI cancellation as a normal user stop rather than an action failure.
+- [x] Add regression coverage for cancellation log handling.
+- [x] Run full verification.
+
+## Review
+
+- `ROI_SELECTION_CANCELLED` is now treated as a normal user stop in `handleActionClick`, so it returns before recording a debug error or logging `Action click failed`.
+- Added regression coverage that the cancellation branch precedes action-failure recording.
+- Verification: `npm run typecheck`, `npm test` with 82 passing tests, `npm run build`, and final `npm run verify` all passed.
+
+# G017 Export Review Before PDF
+
+## Plan
+
+- [x] Inspect the current user-facing export panel, debug score state, and PDF/PNG export ordering.
+- [x] Add a final review panel before export with duplicate cluster visibility, include/exclude controls, and reorder controls.
+- [x] Pass the confirmed cluster order into PDF/PNG export without changing the default automatic export behavior.
+- [x] Add regression tests for user-specified export order and fallback sorting.
+- [x] Run typecheck, tests, build, and final verification.
+
+## Design Notes
+
+- Design read: internal product review UI for score export, focused on scanning and correction rather than marketing polish.
+- Dials: `DESIGN_VARIANCE 4`, `MOTION_INTENSITY 2`, `VISUAL_DENSITY 7`.
+- Success criteria: PDF/PNG export does not start until the user confirms the reviewed list, duplicate clusters are visibly flagged, selected items can be moved up/down, and the generated files use the confirmed order.
+
+## Review
+
+- Replaced the export-ready path with a final review panel that reads captured score thumbnails from session storage.
+- Added include/exclude checkboxes, up/down order controls, duplicate cluster badges, selected-count page estimates, and Korean status text.
+- Added optional `scoreOrder` to export messages and made PDF/PNG chunking honor the reviewed cluster order while preserving default first-seen sorting when no order is supplied.
+- Propagated cluster `seenCount` into exported score metadata so the review panel can flag automatically merged duplicates, not just accidental duplicate rows.
+- Added regression tests for reviewed ordering, missing/duplicate reviewed IDs, and content-script routing to the review panel.
+- Verification: `npm run verify` passed with typecheck, 85 tests, and Vite production build. Built `dist/src/content/roi-selector.js` passed `node --check`, remains IIFE-wrapped, and contains the new review panel path with no static import.
+
+# G018 Offscreen Capture Startup and Log Clarity
+
+## Plan
+
+- [x] Inspect the reported offscreen `GET_USER_MEDIA_FAILED`, `[object Object]`, and `No current offscreen document` paths.
+- [x] Compare the current tabCapture stream-id timing against official Chrome offscreen capture guidance.
+- [x] Avoid duplicate startup failure handling from offscreen start errors.
+- [x] Retry startup once with a fresh stream id when the first offscreen `getUserMedia()` redemption fails.
+- [x] Normalize logged errors so CaptureError, DOMException, and plain objects do not print as `[object Object]`.
+- [x] Run targeted regression tests and full verification.
+
+## Review
+
+- Root cause path: the review/edit panel could not appear because capture startup failed first while the offscreen document was redeeming the tab capture stream with `getUserMedia()`.
+- Background startup now retries `START_CAPTURE` once with a freshly acquired stream id when the first offscreen redemption returns `GET_USER_MEDIA_FAILED`.
+- Offscreen startup failures no longer emit a duplicate `CAPTURE_ERROR`; the command response path owns startup failure handling.
+- Offscreen cleanup now ignores the benign `No current offscreen document` race if the document is already gone.
+- Logger/error formatting now prints CaptureError, Error, DOMException-like objects, and plain objects as readable text instead of `[object Object]`.
+- Verification: official Chrome tabCapture/offscreen guidance checked; `npm run verify` passed with typecheck, 89 tests, and Vite production build; built background/offscreen/content scripts passed `node --check`.
+
+# G019 Export Review Loading Hang
+
+## Plan
+
+- [x] Trace the review panel loading path after `SCORE_EXPORT_READY`.
+- [x] Compare the content-script data access path against Chrome `storage.session` access rules.
+- [x] Move export review data loading behind a background runtime message.
+- [x] Add regression coverage so the content script does not read `storage.session` directly.
+- [x] Run full verification.
+
+## Review
+
+- Root cause: the review panel was waiting for data from `chrome.storage.session` in a YouTube content script, but Chrome restricts `storage.session` to trusted extension contexts by default.
+- Added a `GET_EXPORT_REVIEW_DATA` runtime message so the background service worker reads the captured score list and returns it to the panel.
+- Updated the review panel loader to request data through background, then render the include/exclude, duplicate, and ordering UI from that response.
+- Added regression tests that the content script uses `GET_EXPORT_REVIEW_DATA` and does not call `chrome.storage.session.get` directly.
+- Verification: official Chrome storage docs checked; `npm run verify` passed with typecheck, 90 tests, and Vite production build; built background/content/offscreen scripts passed `node --check`; built content script contains `GET_EXPORT_REVIEW_DATA` and no direct `chrome.storage.session.get`.
+
+# G020 Export Review Large Payload Fix
+
+## Plan
+
+- [x] Re-check the current export review panel loading path after the user reports the review/edit window still fails.
+- [x] Identify why `GET_EXPORT_REVIEW_DATA` can still produce `검토 목록을 불러오지 못했습니다`.
+- [x] Avoid transferring full score PNG data URLs through runtime message responses.
+- [x] Keep a fallback path for older loaded extension instances.
+- [x] Add regression coverage for the direct session-storage review path and access-level setup.
+- [x] Run full verification and inspect built extension output.
+
+## Review
+
+- Root cause: the review panel requested the full captured score list, including export-quality PNG data URLs, through `chrome.runtime.sendMessage`; larger captures can make the message response fail or arrive as `undefined`, which falls into the generic “검토 목록을 불러오지 못했습니다” state.
+- Background startup now exposes `chrome.storage.session` to content scripts with `TRUSTED_AND_UNTRUSTED_CONTEXTS`, matching Chrome's documented access-level mechanism for session storage.
+- The export review panel now reads the completed capture state directly from `chrome.storage.session` first, so the edit/review window does not depend on a large runtime message payload.
+- Kept `GET_EXPORT_REVIEW_DATA` as a fallback for older already-loaded extension instances.
+- Verification: official Chrome storage docs checked; `npm run typecheck` passed; `npm test` passed with 90 tests; `npm run verify` passed with typecheck, 90 tests, and Vite production build; built content/background scripts passed `node --check`; built content script is still IIFE-wrapped and includes direct `chrome.storage.session.get`; built background script includes `setAccessLevel` and `TRUSTED_AND_UNTRUSTED_CONTEXTS`.
+
+# G021 PDF Final AI Review Gate
+
+## Plan
+
+- [x] Add a final export validator before PDF/PNG generation that checks selected captures for score validity and overlay contamination.
+- [x] Use configured Gemini/proxy AI validation when available, with local pixel rules as the non-blocking fallback.
+- [x] Replace contaminated captures with clean same-cluster candidates when available; otherwise exclude them from export.
+- [x] Preserve duplicate candidate images per cluster so the final gate has replacement options.
+- [x] Surface replaced/excluded validation results in the export review panel before PDF/PNG save buttons are enabled.
+- [x] Add regression tests for replacement, exclusion, AI fallback, fail-closed local validation, and content-script status wiring.
+- [x] Run full verification and inspect built extension output.
+
+## Review
+
+- Added `src/background/export-score-validator.ts` and wired it into the background `EXPORT_SCORE_CAPTURE` path before PDF/PNG chunking.
+- Offscreen capture now retains bounded same-cluster export candidates, while the stored debug state exposes both selected unique scores and replacement candidates.
+- The final gate exports only `valid` inspection results; contaminated, uncertain, unreadable, missing-canvas, and local-analysis failure paths fail closed unless a clean replacement is found.
+- The export review panel now calls `VALIDATE_EXPORT_REVIEW` while loading, keeps PDF/PNG buttons disabled until validation finishes, swaps replaced rows to replacement images, and locks excluded rows unchecked.
+- The export success message still reports final validation results after the background export path revalidates before file generation.
+- Removed a dead legacy export panel implementation so the review panel has one export success path.
+- Verification: `npm run typecheck` passed; `npm test` passed with 97 tests; `npm run verify` passed with typecheck, 97 tests, and Vite production build; built content/background/offscreen scripts passed `node --check`; built content contains `VALIDATE_EXPORT_REVIEW`, `AI 최종 검토 완료`, `AI 검토: 제외됨`, `AI 검토: 대체됨`, `validationDetails`, and `replacementScoreId`; built background contains `VALIDATE_EXPORT_REVIEW`, `local canvas unavailable`, and `exportCandidates`.
+
+# W1A Occurrence-Aware Capture State
+
+## Plan
+
+- [x] Read scoped product/test files and Wave 1 implementation plan.
+- [x] Run baseline `npm test -- tests/debug-frame-sink.test.ts`.
+- [x] Add failing-first test for `A,A,A,B,A,A,C -> A,B,A,C`.
+- [x] Add typed occurrence metadata while preserving legacy `uniqueScores` and `exportCandidates`.
+- [x] Run `npm test -- tests/debug-frame-sink.test.ts` and `npm run typecheck`.
+- [x] Capture manual QA/evidence artifact with command output, expected vs actual sequence, git status, and cleanup receipt.
+
+## Review
+
+- Added optional `exportOccurrences` message/state support with `occurrenceId` and `occurrenceOrder`.
+- `uniqueScores` remains cluster-first for legacy compatibility; `exportCandidates` remains same-cluster replacement data.
+- Added sink coverage for `A,A,A,B,A,A,C -> A,B,A,C`, plus empty and single-cluster occurrence coverage.
+- Verification: `npm run typecheck` passed; `node --test build-test\tests\debug-frame-sink.test.js` passed with 8 tests; `npm test` passed with 100 tests. The exact command `npm test -- tests/debug-frame-sink.test.ts` still fails after compiled tests pass because the repo script appends a raw `.ts` path to Node, producing `ERR_UNKNOWN_FILE_EXTENSION`.
+- Evidence: `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/W1A-occurrence-state.txt`.
+
+# Task 1 Shared Occurrence Contract
+
+## Plan
+
+- [x] Record dirty worktree status and baseline legacy export ordering output.
+- [x] Add failing-first `tests/score-occurrences.test.ts` for occurrence collapse/order semantics.
+- [x] Add optional occurrence fields to shared capture/message contracts.
+- [x] Implement pure JSON-safe occurrence ordering helpers in `src/shared/score-occurrences.ts`.
+- [x] Run RED/GREEN verification commands and typecheck.
+- [x] Capture manual QA artifact with expected vs actual sequences, occurrence ids, command output, git status, and cleanup receipt.
+
+## Review
+
+- Baseline: `task-1-baseline.txt` captures `npm run build:test`, package type write, and `score-export-download.test.js` passing 6/6.
+- RED: `task-1-red.txt` captures compile-clean failing assertions for missing occurrence behavior.
+- GREEN/manual QA: `task-1-occurrence-contract.txt` captures expected vs actual `A,B,A,C`, distinct A occurrence ids, legacy `scoreOrder`, malformed input edges, final PASS output, git status before/after, and cleanup receipt.
+- No commit made: shared worktree has broad unrelated/untracked state, so staging an atomic commit was not safe in this environment.
+
+# Task 3 Occurrence-Aware Validation And Replacement
+
+## Plan
+
+- [x] Record dirty worktree status and baseline validator output.
+- [x] Add failing-first validator tests for occurrence order, legacy scoreOrder fallback, targeted replacement, and targeted exclusion.
+- [x] Implement occurrence-aware selection and replacement in `src/background/export-score-validator.ts`.
+- [x] Run required GREEN verification commands.
+- [x] Capture C002 manual QA artifact with expected/actual arrays, decision objects, adversarial notes, status before/after, and cleanup receipt.
+
+## Review
+
+- Baseline: `task-3-baseline.txt` captures `npm run build:test`, package type write, and `export-score-validator.test.js` passing 7/7 before Task 3 edits.
+- RED: `task-3-red.txt` captures compile-clean failures where the second A occurrence disappeared and occurrence decision metadata was missing.
+- GREEN: `task-3-green.txt` captures `npm run build:test`, package type write, `export-score-validator.test.js`, `score-occurrences.test.js`, and `npm run typecheck` all exiting 0.
+- Manual QA: `C002-validation-edge.txt` captures expected vs actual arrays, summary counts, full decision objects, adversarial notes, git status before/after, and cleanup receipt.
+- Scope note: no commit made because the worktree is broadly untracked/dirty and the task did not request committing.
+
+# Task 4 Occurrence-Aware PDF/PNG Page Ordering
+
+## Plan
+
+- [x] Record dirty worktree status and baseline active/offscreen export test output.
+- [x] Add failing-first tests for occurrence-aware active chunking, legacy scoreOrder fallback, and offscreen chunker parity.
+- [x] Implement occurrenceOrder-aware selection in active background export chunking.
+- [x] Implement occurrence-aware page creation in dormant offscreen ScorePageChunker.
+- [x] Run required GREEN verification commands and typecheck.
+- [x] Capture C001 manual QA artifact with expected/actual page sequences, command output, adversarial notes, status before/after, and cleanup receipt.
+
+## Review
+
+- Baseline: `task-4-baseline.txt` captures `npm run build:test`, package type write, and both target compiled export test files passing before Task 4 changes.
+- RED: `task-4-red.txt` captures intended failures where active and offscreen chunking collapsed `A,B,A,C` to `A,B,C`, and active `occurrenceOrder` returned no rows.
+- GREEN: `task-4-green.txt` captures `npm run build:test`, package type write, both target compiled export test files, and `npm run typecheck` all exiting 0.
+- Manual QA: `C001-occurrence-flow.txt` captures expected vs actual active/offscreen page clusters, occurrence ids, page count, adversarial probes, git status before/after, and cleanup receipt.
+- Review: `task-4-code-review-and-slop-report.txt` captures the `omo:programming` post-write review and explicit `omo:remove-ai-slops` category pass for the Task 4 scoped files.
+
+# Task 5 Background Occurrence Plumbing And Preview API
+
+## Plan
+
+- [x] Record dirty worktree status and baseline output in `task-5-baseline.txt`.
+- [x] Add failing-first source-scan assertions for preview routing and occurrence plumbing.
+- [x] Thread `occurrenceOrder` through background validation/export messages.
+- [x] Add JSON-safe `PREVIEW_SCORE_EXPORT` handling with PNG data URL page previews and no downloads.
+- [x] Use validated occurrence ids for final export ordering, with legacy `scoreOrder` fallback.
+- [x] Update export-ready counts to prefer occurrence count when occurrence metadata exists.
+- [x] Run required GREEN verification commands and capture manual preview artifact.
+
+## Review
+
+- Baseline: `task-5-baseline.txt` captures dirty status, build-test, package marker, and focused startup/export tests before Task 5 edits.
+- RED: `task-5-red.txt` captures missing preview routing and occurrence plumbing assertions before implementation.
+- GREEN: `task-5-green.txt` captures build-test, package marker, focused background/export tests, and typecheck passing.
+- Preview QA: `task-5-background-preview.txt` captures JSON-safe preview response behavior, no-download preview routing, occurrence-order payloads, and cleanup receipt.
+- Orchestrator verification: `orchestrator-task-5-verification.txt` records the resumed verification pass.
+
+# Final Review Blocker: Metadata-Free Replacement Occurrences
+
+## Plan
+
+- [x] Record initial git status and evidence target.
+- [x] Add a failing regression where A2 is replaced by a clean same-cluster candidate without occurrence metadata.
+- [x] Preserve the original occurrence identity/order/repeat linkage on the validated replacement score.
+- [x] Prove validator decisions and export chunking keep `A,B,A,C`.
+- [x] Run required verification commands and write `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/final-review-blocker-fix.txt`.
+
+## Review
+
+- Added validator coverage for `A,B,A,C` where A2 is contaminated and the only clean replacement candidate is cluster-level with no occurrence metadata.
+- `scoreForReplacementOccurrence` now returns the candidate id/image while overlaying the original occurrence identity, order, repeat index/count, and neighbor occurrence linkage when present.
+- The regression asserts validation decisions stay keyed to A2, `replacementScoreId` stays the candidate id, validated clusters remain `A,B,A,C`, and `chunkScorePages(report.scores)` emits `A,B,A,C`.
+- Verification passed: `npm run build:test`, package marker write, focused validator/export chunk tests, `npm test` with 114 tests, `npm run typecheck`, and `npm run build`.
+- Cleanup: no runtime resources spawned; no downloads started; no object URLs created; worker agent closed by orchestrator.
+
+# Task 7 Content Review Workspace UI And Browser QA
+
+## Plan
+
+- [x] Load `omo:programming`, `omo:frontend`, `omo:visual-qa`, `DESIGN.md`, and Task 7 implementation plan.
+- [x] Record baseline `git status --short`, build-test, content-script source tests, and production build.
+- [x] Add failing-first source-scan assertions for occurrence review UI, preview, and legacy storage loading.
+- [x] Implement occurrence-aware review rows, selected score, comparison strip, and preview-before-export controls.
+- [x] Run green verification commands and `node --check` on the built content script.
+- [x] Drive browser/content QA harness and write C003 evidence with cleanup receipt.
+
+## Review
+
+- Baseline: `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/task-7-baseline.txt` captures dirty status, `npm run build:test`, package marker, focused content-script bundle test, and production build passing before Task 7 edits.
+- RED: `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/task-7-red.txt` captures the added source scan failing on the cluster-only review panel before implementation.
+- GREEN: `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/task-7-green.txt` captures build-test, package marker, focused content-script bundle test, typecheck, production build, and built content-script syntax check passing.
+- C003: `.omo/ulw-loop/repeated-score-occurrence-review-20260707-v2/evidence/C003-review-ui.txt` captures a built content-script/CSS Node VM DOM harness with `A,B,A,C`, distinct A occurrence ids, replacement/exclusion decisions, preview data URL, preview/export payload assertions, adversarial notes, and cleanup receipt.
+- Screenshot note: no screenshot captured because `browser:control-in-app-browser`, Playwright/jsdom/happy-dom, and local Chrome/Edge commands were unavailable; fallback is recorded in C003.
+- Commit: no commit made because the workspace has broad unrelated untracked/dirty state, making atomic staging unsafe.
+
+# G021 Plugin UX Improvements
+
+## Plan
+
+- [x] Read `DESIGN.md`, active UI skills, and the existing task history before implementation.
+- [x] Locate the plugin UX surface and identify the highest-impact friction points.
+- [x] Improve the export review panel scan path, primary actions, status feedback, and accessible controls without introducing a new visual language.
+- [x] Add focused regression coverage for the improved review UX.
+- [x] Run typecheck, tests, build, and targeted content-script QA.
+- [x] Document results and remaining risks in this review section.
+
+## Design Notes
+
+- Design read: operational Chrome-extension plugin UI for repeated score-export review, not a landing page or brand surface.
+- Dials: `DESIGN_VARIANCE 5`, `MOTION_INTENSITY 3`, `VISUAL_DENSITY 7`.
+- Source of truth: existing `DESIGN.md` and `.score-export-panel` BEM contract. The `ui-ux-pro-max` generated recommendation drifted toward marketing/video hero patterns, so it is not used as the implementation direction.
+- Success criteria: users can quickly see what will export, what needs attention, what the next action is, and how preview/export status changed.
+
+## Review
+
+- Changed `src/content/roi-selector.ts` and `src/content/roi-selector.css` to add a compact review summary strip, explicit include/exclude state, live status semantics, visible focus states, viewport-bounded panel scrolling, and export buttons that can auto-run preview before PDF/PNG save.
+- Updated `DESIGN.md` with the review summary and export action flow contract so the plugin UX remains aligned with the existing operational design system.
+- Added regression coverage in `tests/content-script-bundle.test.ts` for summary rendering, export action enablement before manual preview, accessible status roles, and small-viewport CSS constraints.
+- Added evidence harnesses under `.omo/evidence/`: `g021-plugin-ux-harness.mjs` validates the content-script export flow, and `g021-plugin-ux-visual-qa.mjs` drives the built panel through headless Chrome screenshots at 375, 768, and 1280 px.
+- Verification passed: `npm run verify` completed with typecheck, 115 passing tests, and Vite build; `node .omo/evidence/g021-plugin-ux-harness.mjs` passed; `node .omo/evidence/g021-plugin-ux-visual-qa.mjs` passed with panel-in-viewport and no horizontal overflow at all tested widths.
+- Remaining risk: visual QA used a deterministic YouTube-like fixture with the built content script, not a manually installed extension session on a live YouTube tab.
+
+# G022 Export Review Panel UX Redesign
+
+## Plan
+
+- [x] Redesign the post-capture export review panel (`src/content/roi-selector.ts` + `roi-selector.css`) for end-user friendliness: persistent header/footer, single scroll body, jargon-free Korean labels, m:ss timing, and all-page preview.
+- [x] Keep every source/CSS contract asserted in `tests/content-script-bundle.test.ts` and the `DESIGN.md` token/BEM family.
+- [x] Run `npm run verify` (typecheck + tests + build) green.
+- [ ] Run browser Visual QA at 375/768/1280 px. Deferred because the user will perform this step directly.
+- [x] Document results and remaining risks in the review section below.
+
+## Review
+
+- The review panel now keeps its header, live status bar, and export actions visible while one body region scrolls. It uses user-facing Korean score numbers, `m:ss` timing, repeat and validation badges, and hides internal occurrence ids in tooltips.
+- Preview renders every generated page in order. PDF and PNG remain available without a manual preview step because export creates the current preview first when needed.
+- Updated `DESIGN.md` to match the implemented 560px/12px shell, status bar, single scroll owner, fixed footer, user-facing selected-score metadata, and all-page preview contract.
+- Updated `.omo/evidence/g021-plugin-ux-harness.mjs` so its fake DOM supports `createTextNode` and verifies preview page structure instead of Korean prose. The harness passed the validation, preview, and export message flow with occurrence order `A,B,A`.
+- Verification: `.omo/evidence/g022-verification.txt` records `npm run verify` passing TypeScript, all 115 tests, and the Vite production build. `.omo/evidence/g022-flow-harness.txt` records the non-visual flow harness passing.
+- Static review: `src/content` LSP diagnostics reported 0 errors, the TypeScript no-excuse checker reported 0 violations, and `node --check` passed for the harness and built content script. The inherited content script remains above the 250 LOC guideline under its existing `SIZE_OK` injection constraint.
+- Browser Visual QA and screenshots were not run, as requested. No browser or background QA process was started.
+
+# G023 Generated Score PDF Diagnosis
+
+## Plan
+
+- [x] Inspect the supplied PDF metadata, rendered pages, and embedded image bounds for clipping or missing systems.
+- [x] Trace the current capture, crop, deduplication, validation, review, and PDF layout path from the indexed source.
+- [x] Compare observed PDF defects with the code and tests to confirm which stage introduces or fails to reject them.
+- [x] Document the confirmed causes, current extraction method, and verification limits in the review section.
+
+## Review
+
+- The supplied PDF is structurally valid: 3 pages at 1200x1700, 11 embedded RGB raster images, and every image is placed within the PDF page bounds. The PDF assembly stage does not crop the images.
+- Five embedded source images are already vertically truncated before PDF placement: page 1 has a 1322x94 fragment, page 2 has 1322x122, 1322x122, and 1322x125 fragments, and page 3 has a 1322x107 fragment. They preserve only part of the upper staff and omit the lower staff and/or code area. The first image also contains the YouTube play overlay, and the 347px-tall images include the AR keyboard strip.
+- The active production path is manual YouTube ROI selection -> full-tab capture sampled every second -> ROI crop -> normalized fingerprint and perceptual-hash clustering -> occurrence ordering -> horizontal staff-line heuristic crop -> optional Gemini/local validation -> review/preview -> pdf-lib bitmap placement. It does not run OCR/OMR, transcribe notes, reconstruct notation, or use the legacy dynamic layout detector.
+- The damage conclusively occurs before PDF assembly. The export-time staff crop is the strongest code-level suspect because it accepts any three long dark horizontal runs and crops around their first/last rows with fixed padding, without requiring a complete grand staff or checking pixels cut at the crop edges. The retained raw ROI frames are unavailable, so this artifact cannot conclusively separate a too-small original ROI from over-cropping.
+- The validation gap is reproduced on the actual 11 embedded images: applying the current local pixel rules classifies all 11 as `valid`, including the five truncated fragments and the play-overlay/keyboard-contaminated captures. Gemini validation is disabled by default; the fallback checks only overall darkness, a large dark band, and a weak staff-row proxy.
+- The review UI can label kept items as `AI`-reviewed even when the local fallback decided them. Export auto-generates a preview when absent but immediately continues to download without a separate user approval gate; preview and export each re-run validation independently.
+- Existing verification remains green despite the defect: `npm run verify` passed typecheck, all 115 tests, and the Vite production build. Current PDF tests assert the MIME/header and sparse layout gap, but do not rasterize final pages or check crop completeness, edge contact, grand-staff preservation, overlays, image/page bounds, or preview-to-PDF identity.
+- Verification limit: the completed browser capture session and uncropped ROI frames were not retained, so the exact timestamp-level before/after crop toggle cannot be replayed from this PDF alone. Diagnosis used the final PDF, its embedded source bitmaps, page content transforms, the active source path, the current local validation algorithm, and the full test/build suite.
+
+# G024 Complete Score Capture And Approved Export
+
+## Plan
+
+- [x] Record the implementation contract in `DESIGN.md` and debugging evidence before changing runtime behavior.
+- [x] Add failing regressions for full-ROI export images, paused-frame rejection, two-observation stability, and approved-preview export payloads.
+- [x] Preserve full ROI images for export while keeping staff-content normalization limited to score identity comparison.
+- [x] Ignore paused samples and require two consistent observations before accepting a newly changed score.
+- [x] Require explicit preview approval and export the exact approved preview pages for both PDF and PNG.
+- [x] Run typecheck, the full test suite, production build, and a non-visual export-flow harness.
+- [x] Document results and leave browser Visual QA deferred to the user as requested.
+
+## Review
+
+- Export images now preserve the complete manually selected ROI. Staff-content extraction remains only in fingerprint generation, so the permissive staff-line crop can no longer remove lower staves before PDF composition.
+- Frame collection waits for a non-paused playback tick, and every new score needs two matching observations. Unconfirmed transition frames are replaced in the pending buffer instead of becoming export clusters.
+- Export validation now rejects clear geometry fragments below 75% of the selected-session median before AI inspection. This specifically covers mixed full-height/truncated captures while avoiding assumptions about a single score's notation type.
+- PDF and PNG actions remain disabled until a generated preview is explicitly approved. Final export consumes the approved preview page data URLs, so it does not re-run validation or page composition after approval.
+- Review badges and status copy now identify the actual `AI` or `로컬` decision source.
+- Verification passed: `npm run verify` completed with clean typecheck, 121 passing tests, and a Vite production build. The built content-script Node VM harness passed approval-gate and frozen-page payload checks, and `node --check` passed for the built content script.
+- Browser Visual QA was not run because the user explicitly reserved that check. The remaining manual gate is to reload the extension, repeat the same YouTube capture, inspect every preview page, approve it, and compare the resulting PDF.
+- The repository was already broadly dirty/untracked before this task; unrelated files were preserved and no commit was made.
+
+# G025 Review Image Zoom And Readability
+
+## Plan
+
+- [x] Define the larger review hierarchy and reusable image viewer contract in `DESIGN.md`.
+- [x] Add failing regression coverage for zoom entry points, keyboard controls, modal accessibility, and larger image sizing.
+- [x] Add a shared image viewer for selected scores, occurrence thumbnails, and generated preview pages.
+- [x] Increase the panel, selected score, occurrence thumbnail, and page preview display sizes.
+- [x] Run typecheck, automated tests, and production build without browser or screenshot QA.
+
+## Review
+
+- Enlarged the review panel from 560px to 760px, the selected score to a 320px maximum height, and occurrence thumbnails to 160x96px on desktop.
+- Removed the small fixed-height cap from generated PDF page previews so each page uses the available panel width.
+- Added one accessible image viewer shared by the selected score, captured occurrences, and generated preview pages, with 50-300% zoom, 25% steps, width fit, keyboard controls, focus trapping, and focus restoration.
+- `npm run verify` passed: TypeScript typecheck, 122 automated tests, and the Vite production build.
+- Browser, screenshot, manual interaction, and visual QA were intentionally not run per user request; visual approval remains with the user.
+
+# G026 Sequential Score Preservation
+
+## Plan
+
+- [x] Reproduce a `1,2,3,4,5` score stream collapsing to `1,5` with a failing regression.
+- [x] Confirm whether the loss occurs in transition buffering, occurrence ordering, or representative image lookup.
+- [x] Fix the root cause while retaining noise rejection for isolated transition frames.
+- [x] Run targeted tests, typecheck, full tests, production build, and a non-visual export-flow harness.
+- [x] Record the verification evidence and cleanup result.
+
+## Review
+
+- Root cause: once the first score was accepted, every one-sample `different` candidate replaced the previous pending candidate. Scores 2-4 therefore never became clusters, so occurrence ordering and image export never received them.
+- The clusterer now promotes a pending different score after one configured stable sampling interval when the following sample is also unrelated to every accepted score, and carries the following sample forward as the next pending transition.
+- Returning to an already accepted score still takes the existing match branch and discards the isolated pending frame, preserving transient-noise rejection.
+- Red regression observed only hashes 1 and 5; the fixed suite passes all 123 tests.
+- Verification: `npm run typecheck` passed, `npm test` passed 123/123, `npm run build` passed, and the built non-visual capture/export harness reported `accepted: 5`, `exported: 5`, in cluster order 1-5.
+- Browser and screenshot Visual QA were intentionally not run per user request.
+
+# G027 Long Capture Persistence
+
+## Plan
+
+- [x] Reproduce the growing session-storage payload and repeated sink failure behavior with automated tests.
+- [x] Move full score images out of the bounded session-state object while preserving review/export hydration.
+- [x] Correct consecutive sampling-error accounting so persistent delivery failures surface.
+- [x] Run targeted tests, a non-visual long-capture harness, typecheck, the full test suite, and production build.
+- [x] Record the root cause, verification evidence, and remaining limits below.
+
+## Review
+
+- Root cause: each one-second frame carried cumulative full-resolution PNGs in `uniqueScores`, `exportOccurrences`, and `exportCandidates`, and the background rewrote those duplicates into `chrome.storage.session`. The session area has a fixed 10 MB quota, so writes eventually rejected and later frames disappeared from state.
+- A second defect hid the failure: `consecutiveSampleErrors` was reset before the awaited frame delivery. Every rejected delivery therefore looked like the first failure and the capture kept dropping frames without reaching its error threshold.
+- Full images are now deduplicated by session/image id in `chrome.storage.local`; `storage.session` contains only bounded metadata and recent small previews. Review, validation, preview, and the debug page hydrate the images on demand. The manifest requests `unlimitedStorage` for this intentionally large local capture data.
+- Offscreen transport sends each full export image only once. Later cumulative messages contain metadata plus at most a newly retained candidate, avoiding a second growth point before storage.
+- Playback gating now applies to sampling rather than `stop()`, so pausing does not create captures and cannot prevent cleanup.
+- Red regressions reproduced a state larger than 10,485,760 bytes and the misplaced error reset. The fixed two-minute simulation added one score per second, kept session metadata below 1 MB, restored all 120 images, and rewrote no existing image.
+- Final verification passed: `npm run verify` completed typecheck, all 130 tests, and the Vite production build.
+- Browser, screenshot, and visual QA were not run per the user's instruction. The extension must be reloaded because `manifest.json` and built service-worker behavior changed.
+
+# G028 Export Ready Notification Regression
+
+## Plan
+
+- [x] Reproduce the missing export-ready notification through the built runtime-message path without visual QA.
+- [x] Confirm whether frame persistence can finish after capture shutdown and leave the export count at zero.
+- [x] Serialize capture messages and acknowledge persisted frames before the offscreen sender drops image payloads.
+- [x] Run targeted red/green tests, typecheck, the full suite, production build, and a non-visual message-flow harness.
+- [x] Record the confirmed cause, verification evidence, and remaining manual reload requirement.
+
+## Review
+
+- Root cause: `FRAME_SAMPLED` was handled as a fire-and-forget background message. After full images moved to asynchronous local storage, `CAPTURE_STOPPED` could finalize the session and read an empty score state before frame persistence completed. The offscreen sink simultaneously marked its one-time image payload delivered without a persistence acknowledgement.
+- A second ordering gap existed inside `FrameInputCollector.stop()`: it could null collector state and send `CAPTURE_STOPPED` while `sink.onFrame()` was still in flight, causing the late frame to be ignored after session cleanup.
+- Background frame/stop events now run in one serialized queue and return an explicit `CaptureCommandResponse`. The sink marks image payloads delivered only after an `{ ok: true }` acknowledgement, and queue failures are recoverable rather than poisoning later messages.
+- Normal capture shutdown now awaits an active frame delivery before emitting `CAPTURE_STOPPED`. Error-triggered shutdown avoids awaiting itself and therefore does not deadlock.
+- Silent notification exits now log the session id for zero persisted scores or a failed content-tab delivery, closing the observability gap that made this regression appear as “nothing happens.”
+- Red tests failed at 130/131 and 131/132 respectively before each fix. Final `npm run verify` passed typecheck, all 132 tests, and the production build.
+- The built non-visual service-worker harness delayed the image write, confirmed stop stayed pending, then observed `SCORE_EXPORT_READY` with `scoreCount: 1`, `pageCount: 1`, and the image present in local storage.
+- Browser, screenshot, and visual QA were not run per the user's instruction. Reload the unpacked extension before retesting because the built service worker and offscreen bundle changed.
+
+# G029 Empty Export Images Regression
+
+## Plan
+
+- [x] Reproduce the review panel's `내보낼 수 있는 악보 이미지가 없습니다.` branch from persisted capture state.
+- [x] Confirm whether image loss occurs during local persistence, hydration, background response transport, or content-side mapping.
+- [x] Add a failing regression and apply the smallest root-cause fix.
+- [x] Run targeted tests, typecheck, the full suite, production build, and a non-visual export-review harness.
+- [x] Record the confirmed cause, verification evidence, and reload requirement.
+
+## Review
+
+- Root cause: the content script read compact `chrome.storage.session` state before calling the background review API. G027 intentionally removed every full `image.dataUrl` from that state, so the direct read succeeded with metadata-only scores and `toReviewedScores()` filtered the entire list.
+- The review panel now has one data source: `GET_EXPORT_REVIEW_DATA`. The background hydrates score images from `chrome.storage.local` before responding. The obsolete untrusted-content access to `storage.session` and its `setAccessLevel()` exposure were removed.
+- The failing-first bundle regression observed 6/8 passing tests and found both obsolete direct-read paths. After the fix, the targeted capture/background/content suite passed 20/20.
+- `npm run verify` passed typecheck, all 132 tests, and the Vite production build.
+- The built non-visual DOM harness used compact session records with no `dataUrl`, received hydrated images only through `GET_EXPORT_REVIEW_DATA`, rendered 3/3 score rows, generated a preview, and sent the approved PDF export payload.
+- Browser, screenshot, and visual QA were not run per the user's instruction. Reload the unpacked extension before retesting because the content-script and service-worker bundles changed.
+
+# G030 Safe ROI Contamination Cleanup
+
+## Plan
+
+- [x] Trace retained same-score candidates and choose the narrowest export-time cleanup seam.
+- [x] Add failing pixel regressions for transient overlay removal, persistent notation preservation, safe outer whitespace/band trimming, and unrecoverable contamination rejection.
+- [x] Implement non-generative temporal cleanup and guarded edge trimming before validation/page composition.
+- [x] Keep original stored ROI images unchanged and feed only cleaned derivatives to preview/PDF/PNG.
+- [x] Run targeted tests, typecheck, the full suite, production build, and a non-visual pixel/export harness.
+- [x] Document behavior, limits, and extension reload requirement.
+
+## Review
+
+- Root cause: the full selected ROI was intentionally copied byte-for-byte into export candidates, and validation/page composition had no cleanup stage. A second defect recorded every non-representative temporal candidate with quality `0`, so a later clean frame could be pushed out of the four-frame candidate pool.
+- Export validation now creates an in-memory derivative before inspection. With at least three distinct same-cluster, same-size frames, it replaces only pixels where a strict majority shows low-chroma paper; persistent staff, note, and color pixels remain unchanged.
+- Outer vertical whitespace plus multi-row uniform dark or colored bands are trimmed only when a plausible repeated staff-row pattern is present. The algorithm does not crop to the staff box and does not remove internal gaps.
+- A filled dark or high-chroma component that remains after cleanup is classified as unrecoverable by the local validator, so it is replaced by a clean candidate or excluded with a recapture-required reason instead of being invented.
+- Stored ROI images and occurrence metadata are never mutated. The cleaned derivative is inspected and passed into the existing approved-preview PNG path; the final PDF already embeds those exact approved page PNGs.
+- Candidate retention now carries each frame's measured quality instead of `0`, preserving later clean frames for temporal cleanup.
+- Red evidence: the cleanup module was absent (`TS2307`), the validator had no `imageCleaner` seam, and a bright yellow transient overlay remained `[250,240,80,255]`. Green pixel/export regressions pass 37/37.
+- Final verification: `npm run verify` passed TypeScript typecheck, all 137 tests, and the Vite production build. The non-visual export regressions also confirm that approved preview PNGs are the exact inputs embedded into the final PDF.
+- Browser, screenshot, and visual QA were not run per the user's instruction. Reload the unpacked extension before retesting so the rebuilt background service worker and offscreen bundle are active.
+
+# G031 Short TAB Score And Bottom Overlay
+
+## Plan
+
+- [x] Reproduce a valid full-width 1322x222 score being excluded by the session-median height heuristic.
+- [x] Lock a synthetic TAB regression that removes an outer YouTube title band without cropping notation.
+- [x] Replace the height-based completeness heuristic with evidence that does not penalize legitimate compact score layouts.
+- [x] Run targeted tests, the full verification suite, and production build without Visual QA.
+- [x] Document the root cause, limits, and extension reload requirement.
+
+## Review
+
+- Root cause: export geometry validation compared every score's height with the session median. A legitimate 1322x222 single-line TAB strip was only 64% as tall as 1322x347 peers, so it was excluded before the local or AI content inspector could evaluate it.
+- Geometry validation now treats only invalid dimensions and severe width loss as incomplete. Height is intentionally not used because a fixed YouTube ROI can legitimately contain piano systems, single staffs, and compact TAB strips of very different heights.
+- Width-truncated 500px captures remain excluded against a 1322px session median, so removing the height gate does not disable the reliable fixed-ROI completeness check.
+- Bottom overlay detection now recognizes only thick row runs connected to the top or bottom edge. Its ink threshold tolerates white YouTube title text inside a dark band, while one-pixel TAB/staff lines and dense internal notation cannot qualify as an edge band.
+- Red evidence: the compact-score regression omitted `score-B-compact-tab`; the title-bearing band regression returned crop bottom 222 instead of below row 182. After the fixes, the targeted suite passed 20/20.
+- Final verification: `npm run verify` passed TypeScript typecheck, all 139 tests, and the Vite production build.
+- Browser, screenshot, and Visual QA were not run per the user's instruction. Reload the unpacked extension before retesting so the rebuilt background service worker is active.
+
+# G032 Export Crop Application Regression
+
+## Plan
+
+- [x] Reproduce the reported 1322x222 title-bearing bottom overlay through the crop and export-validation paths.
+- [x] Confirm whether detection, derivative propagation, or browser encoding is the failing boundary.
+- [x] Add a failing regression and implement the smallest root-cause fix.
+- [x] Run targeted tests, the complete verification suite, and a non-visual export-path harness.
+- [x] Record evidence, limits, and the extension reload requirement.
+
+## Review
+
+- Root cause: the solid-band detector correctly found the title overlay beginning at row 182, but small rounded-edge pixels immediately above it became the last content row at 181. The generic 9px content padding then extended the crop through row 190, re-including nine rows of the band it had just excluded.
+- Crop padding is now clamped to the nearest detected top/bottom solid-band boundary. Padding remains around notation and ordinary margins but can no longer cross into a confirmed outer overlay.
+- The exact uploaded 1322x222 screenshot reproduced `{x:0,y:0,width:1322,height:191}` before the fix and `{x:0,y:0,width:1322,height:182}` after it, matching the first overlay row exactly.
+- The failing-first synthetic compact TAB regression reproduced bottom 191; after the change all targeted cleanup tests passed 5/5.
+- Export-path audit confirmed the cleaned score object flows through `validation.scores` into page PNG rendering, and final PDF embeds those approved preview PNGs rather than the stored original.
+- Final verification: `npm run verify` passed TypeScript typecheck, all 139 tests, and the Vite production build. Browser/screenshot Visual QA was not run per the user's instruction.
+- Reload the unpacked extension before retesting so the rebuilt background service worker is active.
+
+# G033 Clamp ROI Capture To Live Video Element
+
+## Plan
+
+- [x] Reproduce an ROI crop whose lower edge extends beyond the HTML video element into the YouTube page title.
+- [x] Trace live `videoRect`, viewport, and tab-capture bitmap metadata into `RoiCropper` and isolate the boundary failure.
+- [x] Add a failing lower-bound regression and implement the smallest geometry fix.
+- [x] Run targeted tests, typecheck, the full suite, and production build without Visual QA.
+- [x] Record the confirmed root cause, verification evidence, and extension reload requirement.
+
+## Review
+
+- Root cause: `frameRectToCaptureBitmapRect()` independently stretched DOM viewport X/Y over the entire tab-capture bitmap. Chrome capture frames can preserve a fixed output aspect ratio and center the actual tab content with letterbox space, so a proportionally taller capture frame expanded the ROI below the video into the YouTube page title.
+- Live geometry transport was not the defect: `videoRect` and viewport flow from the content probe through the background and collector into every `RoiCropper` frame.
+- The mapping now uses one aspect-preserving scale plus centered capture-content offsets. Matching-aspect captures keep their original coordinates; mismatched captures stay inside the actual centered tab content.
+- Red evidence: the regression mapped a 600px-high video in a 1600x900 viewport / 1280x1024 capture down to about row 683, crossing the real row-632 video boundary. After the fix it maps to `{ x: 0, y: 152, width: 1280, height: 480 }` and ends exactly at row 632.
+- Targeted verification passed 22/22. Final `npm run verify` passed TypeScript typecheck, all 140 tests, and the Vite production build.
+- Browser, screenshot, and Visual QA were not run per the user's instruction. Reload the unpacked extension before retesting so the rebuilt offscreen capture bundle is active.
+
+# G034 Dynamic Height-Based PDF Pagination
+
+## Plan
+
+- [x] Reproduce the fixed five-score split despite sufficient remaining page height.
+- [x] Replace count-based chunking with shared width-scaled height packing across preview, PDF, PNG, and offscreen paths.
+- [x] Keep every placed score within page padding and start a new page only when the next score does not fit.
+- [x] Run targeted tests, typecheck, the full suite, and production build without Visual QA.
+- [x] Record verification evidence and the extension reload requirement.
+
+## Review
+
+- Root cause: preview/download/offscreen chunkers and the review panel treated five scores as a page regardless of each width-fitted score height, creating avoidable blank space and inconsistent page counts.
+- Fix: added shared remaining-height packing, routed background/offscreen chunkers and ready notifications through it, and supplied the same page layout metrics to the no-runtime-import review panel.
+- Boundary fixes: extremely tall single scores are compressed inside printable bounds, renderer placement uses persisted score dimensions like the chunker, and missing-image entries are excluded consistently before ready/preview calculation.
+- Regression evidence: compact `1600x180` scores pack `11 + 1`, a generated twelve-score PDF has two pages, taller `512x160` fixtures pack `4 + 2`, and an extreme tall-image placement remains inside the bottom padding.
+- Verification: `npm run verify` passed (`143/143` tests, TypeScript typecheck, and Vite production build). Visual QA was intentionally not run per the user's instruction.
+- Runtime note: reload the unpacked extension before the next capture/export so Chrome uses the rebuilt content and background scripts; previously generated PDFs are unchanged.
+
+# G035 Remove Non-Notation Black ROI Lines
+
+## Plan
+
+- [x] Reproduce a long black ROI separator surviving the real cleanup/export derivative path.
+- [x] Confirm whether the line originates in cleanup, temporal consensus, or page rendering.
+- [x] Remove only non-notation border/separator bands while preserving staff lines, barlines, notes, text, and symbols.
+- [x] Add unit and integration regressions for black-line removal and notation preservation.
+- [x] Run targeted tests, no-excuse audit, full verification, and production build without Visual QA.
+
+## Review
+
+- Root cause: persistent separators survive temporal paper-background consensus, and the cropper only handles edge-adjacent bands without whitening their pixels.
+- Fix: whiten 3+ row bands covering at least 90% of ROI width, normalize paper-like pixels to pure white, and clean replacement candidates through the same path.
+- Regression evidence: targeted cleanup/validator suite passed 23/23; direct pixel scenario produced white separator and paper pixels while retaining staff and barline pixels.
+- Full verification: `npm run verify` passed typecheck, 146/146 tests, and the production Vite build.
+- Visual QA intentionally not run per user request.
+- The no-excuse audit found one pre-existing intentional AI-fallback empty catch at `export-score-validator.ts:145`; no new violation was introduced by this fix.
+
+# G036 Diagnose AI Review Falling Back to Local
+
+## Plan
+
+- [x] Confirm the stored-key path, enabled flag, host permission, and model endpoint independently.
+- [x] Trace every AI-to-local fallback condition and the review UI label source.
+- [x] Identify the observed root cause or the exact missing runtime evidence without exposing the API key.
+- [x] Record the diagnosis and any required fix scope.
+
+## Review
+
+- Observed: `.env` contains a non-empty `GEMINI_API_KEY`, and the key successfully queried `models/gemini-3.1-flash-lite` with HTTP 200.
+- Root cause: extension runtime never reads `GEMINI_API_KEY`; export validation reads only `chrome.storage.local.aiJudgeSettings`, whose default is disabled.
+- Observability gap: AI configuration errors, HTTP failures, uncertain results, and confidence below 0.65 all silently fall back to the local inspector, so the review UI cannot show the actual reason.
+- Verification: the two existing AI-failure/uncertain fallback regressions passed.
+- No product source was changed because the user requested a diagnosis. Do not bundle the `.env` key into extension JavaScript; configure extension storage or use a proxy instead.

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Score Frame Collector",
+  "version": "0.1.0",
+  "description": "Collect timestamped frames from YouTube videos for local score analysis.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "unlimitedStorage",
+    "downloads"
+  ],
+  "optional_host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Start score frame collection"
+  },
+  "options_page": "src/debug/debug.html",
+  "minimum_chrome_version": "116"
+}
