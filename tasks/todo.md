@@ -1,5 +1,43 @@
 # ROI Score Export Pipeline
 
+# G043 Live Backend Media Processing Failure
+
+## Plan
+
+- [x] Reproduce the reported failure against the currently listening backend and capture the job result/runtime state.
+- [x] Distinguish stale process, stale tool environment, and current downloader regression.
+- [x] Apply the smallest runtime or code fix and lock any missing regression.
+- [x] Run the same link through the actual frontend API backend, download the PDF, and verify the artifact.
+- [x] Run full verification and remove debug artifacts.
+
+## Review
+
+- Root cause: the server's normal media configuration uses the bare PATH command `ffmpeg`, but the downloader adapter passed that command name as `yt-dlp --ffmpeg-location ffmpeg`. yt-dlp interpreted it as a nonexistent path, exited successfully after downloading split streams, and reported a merged MP4 path that did not exist.
+- The adapter now emits `--ffmpeg-location` only for configured values that contain an actual path. Bare commands are resolved by yt-dlp from the same PATH that already passed server startup validation.
+- Red/green regression: `lets yt-dlp resolve a bare ffmpeg command from PATH` failed before the fix and all three downloader/frame-extraction tests passed afterward.
+- Live QA: the same link failed on the frontend backend port 4174 before the change (`MEDIA_PROCESSING_FAILED`) and succeeded afterward with progress 100, two PDF pages, and a 602,337-byte downloadable result.
+- Verification: `npm run verify` passed typecheck and 180/180 tests plus web/extension builds; TypeScript no-excuse audit passed both changed files.
+
+# G042 Photo Contamination, Duplicate Sheets, And Two-Staff Crop Completeness
+
+## Plan
+
+- [x] Inspect the exact `yt2sheet-pDkESH-ItxQ.pdf` output and extracted score images to classify photo contamination, duplicate sheets, and top/bottom notation clipping.
+- [x] Add failing-first regressions that reproduce the observed photo-like candidate, overlapping duplicate state, and two-staff boundary loss.
+- [x] Implement the smallest shared server crop and identity fix without excluding legitimate compact or piano notation.
+- [x] Regenerate the same YouTube link and compare accepted score count, duplicate similarity, photographic content, and edge-touching notation.
+- [x] Run focused tests, full verification, TypeScript no-excuse audit, PDF QA, cleanup, and record the result.
+
+## Review
+
+- Root causes: a three-row musical beam was misclassified as a non-paper boundary; whole-crop hashes changed with title/padding; photo removal erased only the connected dark/color component and left a disconnected pale halo.
+- The crop boundary now requires eight consecutive non-paper rows, duplicate comparison includes a dominant-notation hash, and score normalization removes qualifying photographic component bounds with enough padding to clear halos while preserving titles and colored notation.
+- Failing-first evidence: the crop fixture stopped at row 65 and lost row 45; the padding/title duplicate fixture returned two scores; the photo-halo fixture retained 16 non-white pixels before the padded bounds fix.
+- Focused verification: 19/19 server analysis and video-processor tests passed.
+- Full verification: `npm run verify` passed typecheck, 179/179 tests, web production build, and extension production build; the TypeScript no-excuse audit reported no violations in seven changed files.
+- End-to-end QA also exposed and fixed a downloader integration bug: `yt-dlp` could not see the configured FFmpeg binary, returned a nonexistent merged MP4 path, and made the API job fail. The processor now passes `--ffmpeg-location` explicitly and locks it with a regression test.
+- Exact-artifact QA: POSTing the same YouTube link to a fresh API server succeeded, reported two pages, and downloaded a 602,337-byte PDF containing 11 distinct score systems. Rendered page inspection confirmed no photographic residue, no repeated systems, no page overlap, and complete upper/lower piano staves.
+
 # G022 Transient YouTube Overlay Suppression
 
 ## Plan
@@ -772,3 +810,114 @@
 - Observability gap: AI configuration errors, HTTP failures, uncertain results, and confidence below 0.65 all silently fall back to the local inspector, so the review UI cannot show the actual reason.
 - Verification: the two existing AI-failure/uncertain fallback regressions passed.
 - No product source was changed because the user requested a diagnosis. Do not bundle the `.env` key into extension JavaScript; configure extension storage or use a proxy instead.
+
+# G037 Standalone Link-to-Score Frontend Foundation
+
+## Plan
+
+- [x] Preserve the existing MV3 extension build and capture behavior as a regression boundary.
+- [x] Define the standalone page design contract, inclusive personas, responsive states, and API boundary before UI code.
+- [x] Add failing-first coverage for valid YouTube input, malformed input, and score-job response states.
+- [x] Add an isolated Vite web build that outputs to `dist-web` and never overwrites extension `dist`.
+- [x] Implement a Korean link-only page that submits a real score job, polls progress, and shows results only after backend success.
+- [x] Verify malformed input and backend failure recover without fabricated output.
+- [x] Run typecheck, focused tests, the standalone web build, and the complete extension verification suite.
+- [x] Run real-browser happy/error flows, responsive/keyboard/accessibility checks, and visual QA at 375, 768, and 1280 pixels.
+- [x] Complete independent visual and implementation review gates and record evidence.
+
+## Review
+
+- Added a separate `web/` Vite surface and `dist-web` build. Existing `manifest.json`, `vite.config.ts`, and extension runtime entrypoints remain unchanged.
+- The page accepts standard YouTube, Shorts, embed, and youtu.be links through the shared parser, canonicalizes the video ID, posts a typed score job, polls queued/running states, and exposes a download only after a validated succeeded response.
+- Contract RED/GREEN evidence covers malformed input, all job states, required result metadata, typed malformed-URL failure, immutable job identity, and rejection of non-HTTP download URLs. Final verification passed TypeScript, 156/156 tests, the standalone production build, and the MV3 production build.
+- Real-browser QA passed invalid-input focus/no-request behavior, queued/running progress, real QA response download, backend failure/retry, keyboard Tab/Enter, reduced motion, 375/768/1280 responsive layouts, and 640 CSS-pixel 200-percent-zoom equivalence without horizontal overflow.
+- Three mobile and three desktop Lighthouse runs on the final build scored 100 for performance, accessibility, best practices, and SEO. `npm audit` reports zero vulnerabilities.
+- Two fresh independent Visual QA reviewers passed all 15 final state/breakpoint captures plus keyboard, 640px boundary, and 600px stacked-form evidence for source revision `5558168902617662678ee333f65db0a9d6ec2f5a756456ba4637da0acbb37a36`; no recapture is required.
+- QA-only API and preview processes were closed; ports 4173 and 4174 have zero listeners. The production backend remains the explicit next migration layer and no fake success path ships in the frontend.
+- `WEB-001` remains open for the production backend: authenticated job ownership, server-side YouTube retrieval, frame/score processing, result storage, rate limits, and authorized downloads.
+
+# G038 Local YouTube Link-to-Score Backend
+
+## Plan
+
+- [x] Confirm the standalone frontend contract and identify the Node-safe score-processing seams.
+- [x] Install and verify `yt-dlp`, `ffmpeg`, and `ffprobe` on this Windows user account.
+- [x] Add failing-first API, media-processing, deduplication, and PDF-result coverage.
+- [x] Implement a local HTTP job service that validates YouTube links, runs one bounded job at a time, and exposes downloadable results.
+- [x] Implement real `yt-dlp` retrieval, `ffmpeg` frame extraction, notation detection, duplicate suppression, page composition, and PDF output.
+- [x] Connect repository scripts and the existing Vite proxy to the backend without changing the extension build.
+- [x] Run typecheck, focused tests, full verification, CLI smoke tests, and a non-visual HTTP end-to-end scenario.
+- [x] Record the implementation and verification evidence; do not run Visual QA.
+
+## Review
+
+- Installed `yt-dlp` 2026.07.04 plus `ffmpeg`/`ffprobe` N-125365-g9a01c1cb6a for the current Windows user and verified all three executables after refreshing the user PATH.
+- Added a local-only Hono job API on `127.0.0.1:4174` with strict YouTube URL/video identity validation, serialized processing, progress states, typed failures, and job-bound PDF downloads.
+- Added the real media pipeline: `yt-dlp` metadata/download, two-hour and 2 GB limits, `ffprobe` duration validation, bounded `ffmpeg` sampling, Sharp-backed staff analysis, perceptual duplicate suppression, shared page packing, and `pdf-lib` output.
+- Added `npm run dev` to start the API and standalone Vite frontend together while leaving the MV3 extension build unchanged.
+- Failing-first and green coverage now includes API identity, job lifecycle, authorized result serving, staff/blank discrimination, perceptual duplicate handling, and non-empty PDF composition.
+- Real end-to-end evidence: public 22-second score video `lNh9zuETjlc` completed through the HTTP API and downloaded a parseable 170,789-byte, one-page PDF.
+- Final verification: `npm run verify` passed typecheck, all 162 tests, standalone web build, and extension build; `npm audit --audit-level=high` reports zero vulnerabilities; the no-excuse audit and `git diff --check` passed.
+- Non-visual runtime check passed through the Vite proxy (`/` HTTP 200 with app root; `/api/health` returned `ok`). Visual QA was intentionally not run per the user's instruction.
+
+# G039 Server Score Recall, Crop Purity, And Export Quality
+
+## Plan
+
+- [x] Compare the user's runtime video under current and denser sampling, recording valid score states, crop bounds, hash distances, and accepted image dimensions.
+- [x] Add failing-first regressions for sub-two-second score changes, piano-adjacent crop exclusion, and export paths that never upscale analysis-sized images.
+- [x] Preserve high-resolution source frames while using a bounded analysis copy for staff detection and identity.
+- [x] Tighten score-panel crop margins and identity rules without excluding compact single-staff or TAB scores.
+- [x] Reprocess the real video and compare score count, non-paper crop contamination, embedded image dimensions, and PDF readability metrics.
+- [x] Run focused tests, full verification, no-excuse audit, and non-visual HTTP QA; do not run Visual QA.
+
+## Review
+
+- Runtime evidence on `08NPrnMV9r4`: the old 2-second/960px path extracted 79 frames and exported 12 scores across 3 pages. Half-second native-resolution extraction plus the corrected identity boundary exported 19 scores across 4 pages.
+- Root causes: the two-second interval skipped short score states; ffmpeg permanently reduced source frames to 960px; the 15-bit global dHash threshold merged distinct notation; and the fixed crop margin crossed the white score panel into dark piano rows.
+- Frame extraction now keeps native dimensions as high-quality JPEG, samples short videos at 0.5 seconds, and stays bounded to 3,600 frames for long videos.
+- Score analysis uses a separate maximum-1280px grayscale copy, maps the detected crop back to the original frame, and keeps the original-width PNG for PDF composition.
+- Crop detection excludes staff candidates without a paper-bright background and stops after a sustained non-paper boundary. On the real repro, maximum dark padding below the last staff fell from 85 analysis rows to 9.
+- Server dHash matching now uses the established 10-bit distance instead of 15. On the real dense sample, the toggle separated 17 states instead of 15 before the additional 1280px analysis improvement.
+- The corrected real API result is a parseable 2,025,145-byte, four-page PDF. The old result was three pages; source score crops are now 1920px instead of being enlarged from 960px to the 1120px printable width.
+- Final verification: `npm run verify` passed typecheck, all 166 tests, standalone web build, and extension build. Focused no-excuse audit passed all six changed TypeScript files. Visual QA was intentionally not run.
+
+# G040 Staff-Anchored Crop And Consistent Score Spacing
+
+## Plan
+
+- [x] Measure staff-relative content bounds and disconnected ink components in the two reported output images.
+- [x] Add failing-first regressions for preserved top musical context, excluded bottom signatures, and normalized inner score padding.
+- [x] Replace symmetric paper expansion with staff-anchored asymmetric content bounds that preserve notation and chord/tempo labels.
+- [x] Keep the shared page gap fixed while ensuring accepted score images no longer carry variable outer whitespace.
+- [x] Reprocess the real video and compare crop components, staff-to-edge padding, page spacing, and PDF structure.
+- [x] Run focused tests, full verification, no-excuse audit, and non-visual API QA; do not run Visual QA.
+
+## Review
+
+- Root cause: score crops used effectively symmetric outer whitespace and accepted low-regularity sliding staff candidates. This clipped tempo/clef context above the staff, let disconnected signature text extend the bottom crop, and made the fixed 16px page gap look inconsistent.
+- Crop selection now prefers regular staff candidates when available, preserves nine staff gaps above for musical context, and limits the bottom to two gaps. The page layout's existing fixed gap remains unchanged.
+- Failing-first coverage reproduced the signature retention (`crop bottom 140 retained signature text at row 105`). Green coverage confirms signatures do not change crop height, vertically shifted equivalent systems produce equal crop heights, top context remains included, and dark piano boundaries stay excluded.
+- Real non-visual API QA on `08NPrnMV9r4` completed with 19 score images across 3 pages. The previous quality pass also found 19 images but required 4 pages because of excess internal whitespace; the intermediate over-aggressive rejection attempts produced 9 and 1 images and were removed.
+- Final verification: `npm run verify` passed typecheck, all 170 tests, standalone web build, and extension build. The TypeScript no-excuse audit passed both changed files. Visual QA was intentionally not run per the user's instruction.
+
+# G041 Complete White Score Sheets From Server PDF
+
+## Plan
+
+- [x] Extract and numerically profile every page and score region in the user's exact downloaded PDF.
+- [x] Trace clipped bounds and non-white pixels back through source crop, cleanup, and page composition.
+- [x] Add failing-first regressions using the observed edge and background characteristics.
+- [x] Implement the smallest shared server-pipeline fix for complete crops and white paper normalization.
+- [x] Regenerate the same YouTube link and compare score count, edge clipping, background purity, and PDF structure.
+- [x] Run focused tests, full verification, TypeScript audit, and non-visual HTTP/PDF QA.
+
+## Review
+
+- The user's exact three-page PDF contained a 222/222/222 gray first sheet and multiple crops whose musical ink continued beyond the exported edge. The server had no background normalization and used fixed staff-gap margins before page composition.
+- Crop bounds now retain a larger top semantic margin and expand through the connected paper-backed notation component, while large blank gaps still exclude signatures and non-paper rows still stop at piano/video boundaries.
+- Bright neutral paper pixels normalize to pure white before hashing and export. Colored notation is preserved, and fractional analysis-to-source bottom coordinates round inward so a colored boundary row cannot leak into the score.
+- Failing-first evidence: crop top 54 removed row 45, crop bottom 146 removed row 165, gray paper stayed `[222,222,222]`, and a 604.5px paper boundary rounded outward to 605. All four regressions pass after the fix.
+- Real same-link HTTP QA job `4bfb8883-c5e6-4133-af4e-e14a84a390d9` succeeded with 18 unique scores and 4 pages. Preserved score analysis found 0 top-edge and 0 bottom-edge dark crops, 0 low-white sheets, and minimum per-score white ratio 0.897. Every API PDF page has no near-solid non-white row and at most a two-row staff-line run.
+- The previous nineteenth item was not lost notation: `frame-000170` is a padding-induced duplicate of `frame-000162` at dHash distance 2.
+- Final verification: `npm run verify` passed typecheck, all 174 tests, standalone web build, and extension build. The TypeScript no-excuse audit passed all four changed files. Visual QA was intentionally not run.

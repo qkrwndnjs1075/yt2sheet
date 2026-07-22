@@ -13,6 +13,7 @@
     "src/offscreen/frame-sink.ts",
     "src/offscreen/debug-frame-sink.ts",
     "src/background/score-export-download.ts",
+    "server/**/*.ts",
     "tests/**/*.ts"
   ]
 }
