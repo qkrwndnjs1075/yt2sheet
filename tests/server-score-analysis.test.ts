@@ -59,6 +59,54 @@ describe("server score analysis", () => {
     assert.ok(crop.y + crop.height <= 96, `crop bottom ${crop.y + crop.height} crossed into the piano`);
   });
 
+  it("stops before a wide white-key piano that still looks paper-backed", () => {
+    // Given: a score followed by bright piano keys joined by dark dividers.
+    const width = 240;
+    const height = 240;
+    const keyboardTop = 145;
+    const grayscale = new Uint8Array(width * height).fill(255);
+    for (let line = 0; line < 5; line += 1) {
+      const y = 80 + line * 10;
+      grayscale.fill(0, y * width + 8, y * width + 232);
+    }
+    grayscale.fill(0, keyboardTop * width + 8, keyboardTop * width + 232);
+    for (let x = 8; x <= 232; x += 16) {
+      for (let y = keyboardTop; y < 215; y += 1) {
+        grayscale[y * width + x] = 0;
+      }
+    }
+
+    // When: the server locates the score crop.
+    const crop = findScoreCrop(buildPreprocessedFrame({ id: "score-over-white-keys", width, height, grayscale }));
+
+    // Then: the wide keyboard component is treated as the lower boundary.
+    assert.ok(crop);
+    assert.ok(crop.y + crop.height <= keyboardTop, `crop bottom ${crop.y + crop.height} crossed into the keys`);
+  });
+
+  it("rejects a bottom-edge piano that is falsely detected as a staff", () => {
+    // Given: only a dense keyboard touching the lower frame edge.
+    const width = 240;
+    const height = 240;
+    const grayscale = new Uint8Array(width * height).fill(255);
+    for (const y of [170, 182, 194, 206, 218]) {
+      grayscale.fill(0, y * width + 8, (y + 2) * width - 8);
+    }
+    for (let x = 8; x < 232; x += 16) {
+      for (let y = 170; y < height; y += 1) {
+        grayscale[y * width + x] = 0;
+        grayscale[y * width + x + 1] = 0;
+        grayscale[y * width + x + 2] = 0;
+      }
+    }
+
+    // When: score detection evaluates the keyboard-only frame.
+    const crop = findScoreCrop(buildPreprocessedFrame({ id: "bottom-piano-only", width, height, grayscale }));
+
+    // Then: no score crop is emitted from the false staff candidate.
+    assert.equal(crop, null);
+  });
+
   it("keeps tempo and chord context inside the safe top margin", () => {
     const width = 160;
     const height = 150;

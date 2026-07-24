@@ -1,4 +1,5 @@
 import { SCORE_IDENTITY_CONFIG } from "./score-identity-config";
+import type { ScorePdfPageLayout } from "./score-identity-config";
 
 export type ScoreImageSize = {
   readonly width: number;
@@ -12,19 +13,14 @@ export type ScoreImagePlacement = {
   readonly height: number;
 };
 
-export type ScorePageLayoutConfig = {
-  readonly pageWidth: number;
-  readonly pageHeight: number;
-  readonly padding: number;
-  readonly gap: number;
-};
+export type ScorePageLayoutConfig = ScorePdfPageLayout;
 
 type SizedScore = {
   readonly image: ScoreImageSize;
 };
 
-export function packScorePages<T extends SizedScore>(scores: readonly T[]): T[][] {
-  const { pageWidth, pageHeight, padding, gap } = SCORE_IDENTITY_CONFIG.page;
+export function packScorePages<T extends SizedScore>(scores: readonly T[], layout: ScorePageLayoutConfig = SCORE_IDENTITY_CONFIG.page): T[][] {
+  const { pageWidth, pageHeight, padding, gap } = layout;
   const contentWidth = pageWidth - padding * 2;
   const contentHeight = pageHeight - padding * 2;
   const pages: T[][] = [];
@@ -52,8 +48,8 @@ export function packScorePages<T extends SizedScore>(scores: readonly T[]): T[][
   return pages;
 }
 
-export function computeScorePagePlacements(imageSizes: ScoreImageSize[]): ScoreImagePlacement[] {
-  const { pageWidth, pageHeight, padding, gap } = SCORE_IDENTITY_CONFIG.page;
+export function computeScorePagePlacements(imageSizes: ScoreImageSize[], layout: ScorePageLayoutConfig = SCORE_IDENTITY_CONFIG.page): ScoreImagePlacement[] {
+  const { pageWidth, pageHeight, padding, gap } = layout;
   const contentWidth = pageWidth - padding * 2;
   const contentHeight = pageHeight - padding * 2;
 
@@ -67,9 +63,11 @@ export function computeScorePagePlacements(imageSizes: ScoreImageSize[]): ScoreI
   const compression = totalHeight > contentHeight
     ? Math.max(1, contentHeight - totalGap) / Math.max(1, totalHeight - totalGap)
     : 1;
+  const renderedHeight = widthFit.reduce((sum, size) => sum + size.height * compression, 0);
+  const groupHeight = renderedHeight + totalGap;
 
   const placements: ScoreImagePlacement[] = [];
-  let y = padding;
+  let y = padding + Math.max(0, (contentHeight - groupHeight) / 2);
 
   for (const size of widthFit) {
     const width = size.width * compression;

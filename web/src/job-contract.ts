@@ -44,9 +44,14 @@ export type FailedScoreJob = {
   };
 };
 
-export type ScoreJob = QueuedScoreJob | RunningScoreJob | SucceededScoreJob | FailedScoreJob;
+export type CancelledScoreJob = {
+  readonly jobId: string;
+  readonly status: "cancelled";
+};
 
-const scoreJobSchema: z.ZodType<ScoreJob> = z.discriminatedUnion("status", [
+export type ScoreJob = QueuedScoreJob | RunningScoreJob | SucceededScoreJob | FailedScoreJob | CancelledScoreJob;
+
+const scoreJobSchema = z.discriminatedUnion("status", [
   z.object({
     jobId: z.string().min(1),
     status: z.literal("queued"),
@@ -62,10 +67,14 @@ const scoreJobSchema: z.ZodType<ScoreJob> = z.discriminatedUnion("status", [
     status: z.literal("succeeded"),
     progress: z.literal(100),
     result: z.object({
-      downloadUrl: z.string().refine(isHttpUrl),
+      downloadUrl: z.string(),
       fileName: z.string().min(1),
       pageCount: z.number().int().positive()
     })
+  }),
+  z.object({
+    jobId: z.string().min(1),
+    status: z.literal("cancelled")
   }),
   z.object({
     jobId: z.string().min(1),
@@ -75,15 +84,18 @@ const scoreJobSchema: z.ZodType<ScoreJob> = z.discriminatedUnion("status", [
       message: z.string().min(1)
     })
   })
-]);
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const protocol = new URL(value).protocol;
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
+]).superRefine((job, context) => {
+  if (job.status === "succeeded" && !isExactDownloadUrl(job.jobId, job.result.downloadUrl)) {
+    context.addIssue({
+      code: "custom",
+      path: ["result", "downloadUrl"],
+      message: "The download URL must target the succeeded job."
+    });
   }
+});
+
+function isExactDownloadUrl(jobId: string, downloadUrl: string): boolean {
+  return downloadUrl === `/api/score-jobs/${encodeURIComponent(jobId)}/download`;
 }
 
 export class ScoreJobContractError extends Error {

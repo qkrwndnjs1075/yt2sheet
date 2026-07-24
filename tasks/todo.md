@@ -1,5 +1,96 @@
 # ROI Score Export Pipeline
 
+# G050 Restore Single Legacy PDF Output (2026-07-24)
+
+## Plan
+
+- [x] Add failing contracts that reject PDF-format selection and require one legacy 1200x1700 output.
+- [x] Remove A4/Letter/Legacy selection from the standalone UI and request/API types.
+- [x] Collapse server PDF generation to the previous single 1200x1700 layout without changing extension export behavior.
+- [x] Update the standalone design contract and remove obsolete preset-specific styling/tests.
+- [x] Run focused tests, full verification, confirm the dev servers, and inspect the live page at mobile and desktop widths.
+
+## Review
+
+- The standalone web form now exposes one PDF action only; A4, Letter, and legacy-format selection no longer exists in the UI or request contract.
+- The server always renders the established 1200x1700 page with 40px padding, 16px score gap, and 72 DPI metadata while extension export geometry and occurrence order remain unchanged.
+- The live frontend on port 4173 has no select element or horizontal overflow at 1280px and 375px; both frontend and backend remain listening, and the live API rejects the removed `pdfPreset` field with HTTP 400.
+- Verification passed: TypeScript no-excuse audit (15 files), `npm run verify`, 289/289 tests, standalone web build, and extension build. Browser screenshots are in `.omo/evidence/single-pdf/`.
+- Independent subagent visual review was intentionally not run because the user explicitly requested no more subagents; manual browser QA was completed directly in this session.
+
+# G049 Standalone PDF Detached Text Cleanup (2026-07-23)
+
+## Plan
+
+- [x] Render the latest standalone PDF and identify the repeated unrelated text separately from score labels and tempo/chord context.
+- [x] Confirm the root cause across the server crop, normalization, and paper-threshold paths.
+- [x] Add failing-first regressions for detached bottom watermark removal and musical-context preservation.
+- [x] Apply the smallest staff-context-aware cleanup in the shared server normalizer.
+- [x] Regenerate the same video through the live backend and verify every PDF page.
+- [x] Run targeted/full verification, independent review, and artifact cleanup.
+
+## Review
+
+- Root cause: the standalone server normalizer removed only chromatic photo components, so neutral-black detached watermarks survived; narrow source-edge remnants also survived and became faint gray antialiasing after PDF scaling.
+- The server now cleans detached bottom ink independently across horizontal score regions and removes only narrow connected foreground components attached to an image edge, preserving staff lines, tempo/chord text, internal barlines, and notation tails.
+- RED-to-GREEN coverage locks detached caption removal, musical-context preservation, horizontally decoupled low notation, full-height edges, and short edge fragments; 29/29 focused frontend-independent PDF/server regressions pass.
+- Live port-4174 regeneration of `08NPrnMV9r4` succeeded as a parseable 1,341,267-byte, three-page PDF. Original-resolution review found no `Pianoin U` watermark, no detached gray edge fragment, no piano/photo band, and no clipped musical ink.
+- Verification passed: clean LSP diagnostics, TypeScript no-excuse audit, `tsc --noEmit`, 197/197 repository tests, standalone web build, diff check, and live frontend/backend HTTP checks on 4173/4174.
+- Independent code review returned CLEAR/APPROVE with no findings after rechecking the focused/full suites, web build, scoped diff, evidence, and rendered final PDF pages.
+
+# G048 Consistent Visible Score-Sheet Spacing (2026-07-23)
+
+## Plan
+
+- [x] Reproduce the uneven visible spacing in the latest generated PDF and distinguish image-box gaps from ink-to-ink gaps.
+- [x] Add a failing-first regression that measures the user-visible spacing contract independently of production constants.
+- [x] Apply the smallest shared layout or normalization fix so adjacent score sheets have consistent visible spacing.
+- [x] Run targeted and full verification, regenerate a real PDF, and measure every adjacent gap.
+- [x] Remove debug artifacts and record the final evidence.
+
+## Review
+
+- Root cause: production used each frame's independently detected staff gap as top/bottom paper padding, so the effective score-sheet separation was two variable paddings plus the fixed layout gap.
+- The server now derives normalization padding from crop width and the fixed page content geometry, making the rendered padding resolution- and detection-independent.
+- The failing-first production-path PDF reported `42,54` pixel gaps before the change and equal gaps after it.
+- Live port-4174 regeneration of `08NPrnMV9r4` succeeded with a parseable 1,450,468-byte, four-page PDF; original-resolution inspection found no spacing-related clipping.
+- Verification passed: 23/23 targeted tests, 192/192 full tests, TypeScript, standalone web build, diff check, and TypeScript no-excuse audit.
+
+# G047 Full-Surface ULW QA Loop (2026-07-23)
+
+## Plan
+
+- [x] Map every supported standalone frontend, API, job, media, and PDF surface to an observable QA criterion; explicitly exclude the separately shipped extension.
+- [x] Run deterministic browser, HTTP, media, and rendered-PDF scenarios with cleanup receipts.
+- [x] Add failing-first regressions and minimally repair every confirmed defect.
+- [x] Repeat focused and full verification until no criterion regresses.
+- [x] Complete independent code review, manual QA, and final gate review.
+
+## Review
+
+- Fixed three confirmed lifecycle defects: running progress can no longer decrease, Windows timeouts now terminate the complete child-process tree, and startup removes only owned orphan work directories while preserving results and linked external data.
+- Independent review found that unconditional startup cleanup could delete another live server's work when both used the same data root. Work directories now encode their owner PID; cleanup preserves live owners and removes legacy or dead-owner directories.
+- Cleanup recognizes only the processor's legacy UUID directories and new PID-owned UUID directories. Unknown or user-managed directories under `work` are preserved instead of being treated as owned orphans.
+- The real current-tree API produced a parseable 1,078,974-byte, three-page PDF for `dX4RlolT9O0`. Original-resolution page inspection found ordered readable scores, white paper, no clipped musical ink, and no piano/keyboard/photo band.
+- PDF layout verification proves every sheet-placement gap is exactly 16 pixels and sparse pages keep unused space in balanced outer margins. Visible ink spacing can still differ with musical content, but normalized sheet boundaries and placement spacing are fixed.
+- Production browser QA passed malformed-input focus/alert with no POST, sanitized failure, enabled retry, success with one named PDF link, zero console warnings/errors, and three stable geometry/ARIA passes at each of 375, 768, and 1280 pixels without overlap or horizontal overflow.
+- Frozen-tree verification passed `tsc --noEmit`, all 191 repository tests, 36 targeted frontend/backend/PDF regressions, the standalone Vite build, `git diff --check`, the TypeScript escape-hatch audit, and a fresh browser-result PDF parse. MV3 installation, loading, and production build were intentionally not performed; the repository-wide test command only exercised existing unit tests.
+- QA-only ports 4475/4476/4477 are free. The requested frontend and backend remain listening on ports 4173 and 4174; exact owning PIDs are kept in the final runtime receipt because watch-mode restarts can change them.
+
+# Git Bash MCP Connection Diagnosis (2026-07-23)
+
+## Plan
+
+- [x] Capture the active MCP registration, Git Bash launcher resolution, and bootstrap evidence.
+- [x] Confirm the connection failure's root cause and select the smallest safe recovery action.
+- [x] Verify the Git Bash MCP server directly and document the exact session-restart boundary.
+
+## Review
+
+- `git_bash` is enabled in Codex and points to `C:\Users\qkrwn\AppData\Local\Programs\Git\bin\bash.exe`; the executable exists and the bootstrap completed successfully at session start.
+- The current Codex session has no `git-bash-mcp` child process, so the tool cannot be exposed in this already-created tool registry. MCP discovery is session-start-bound; configuration is not hot-connected mid-session.
+- Directly launching the configured MCP command returned `ready` for the resolved Git Bash path and executed `printf '%s\\n' git-bash-mcp-ok` with exit code 0. No product-code or configuration change is needed; restart Codex/open a fresh session, then retry `git_bash`.
+
 # G043 Live Backend Media Processing Failure
 
 ## Plan
@@ -921,3 +1012,107 @@
 - Real same-link HTTP QA job `4bfb8883-c5e6-4133-af4e-e14a84a390d9` succeeded with 18 unique scores and 4 pages. Preserved score analysis found 0 top-edge and 0 bottom-edge dark crops, 0 low-white sheets, and minimum per-score white ratio 0.897. Every API PDF page has no near-solid non-white row and at most a two-row staff-line run.
 - The previous nineteenth item was not lost notation: `frame-000170` is a padding-induced duplicate of `frame-000162` at dHash distance 2.
 - Final verification: `npm run verify` passed typecheck, all 174 tests, standalone web build, and extension build. The TypeScript no-excuse audit passed all four changed files. Visual QA was intentionally not run.
+
+# G042 Full-Page Server PDF Layout
+
+## Plan
+
+- [x] Compare `1.pdf` and `yt2sheet-pDkESH-ItxQ (3).pdf` using PDF page/image geometry and identify the exact layout difference without visual QA.
+- [x] Trace the standalone server PDF composer, its page-size/margin/packing constants, and focused regression coverage.
+- [x] Add a failing regression that requires score content to use the available page area like the reference PDF.
+- [x] Implement the smallest shared page-composition change that fills the sheet while preserving aspect ratio and pagination.
+- [x] Run the focused automated tests, TypeScript checks, project verification, and diff review; do not run browser, screenshot, or manual PDF QA.
+
+## Review
+
+- Structural comparison found the reference A4 PDF uses about 92.4-95.6% of each page height, while the reported server PDF's second 1200x1700 page used about 69.7%. The shared layout fitted every score to the printable width but always stacked from the top with a fixed 16px gap.
+- `computeScorePagePlacements` now keeps the existing width fit, aspect ratio, pagination, minimum gap, and tall-image compression while distributing each page's remaining printable height between score systems.
+- The new regression failed against the previous layout with a last-system bottom of 308 instead of 1660, then passed after the change. The focused file passed 13/13 tests.
+- Final automated verification passed TypeScript, all 180 tests, the standalone web build, the extension build, the two-file no-excuse audit, and `git diff --check`. Browser, screenshot, manual PDF review, and regenerated-output QA were intentionally not run per the user's instruction.
+
+# G044 Reported PDF Spacing And Piano Diagnosis
+
+## Plan
+
+- [x] Profile every page and score region in `yt2sheet-dX4RlolT9O0 (1).pdf`, including inter-system gaps and non-paper components.
+- [x] Trace the current server page packing and placement path to explain why visible gaps differ.
+- [x] Trace score detection, piano-boundary cropping, normalization, and rejection rules against the reported artifact.
+- [x] Document the confirmed current behavior and root causes without changing product code.
+
+## Review
+
+- The specified file is a stale one-page 2400 x 3400 artifact created at 10:11, before the current server started. The current server generated 20 scores over seven 1200 x 1700 pages for the same video at 10:43.
+- Page packing is greedy by width-fitted score height. Placement then recalculates `resolvedGap` independently per page from all unused printable height, so it does not provide one global fixed sheet gap. Retained top/bottom whitespace inside each crop further changes the visible ink-to-ink distance.
+- The reported file's main retained component spans 92.0% of the page width and is neutral rather than colored. The current result also contains 93.4%-wide, 128-pixel-high photographic/keyboard bands on multiple pages.
+- Crop boundary detection treats rows with at least 55% bright pixels as paper and needs eight consecutive darker rows to stop. White keyboard rows can pass that gate. The later normalizer removes only compact colored components no wider than 30% of the score image, so a wide black-and-white piano is not removed.
+- No product code, tests, server state, or user files were changed during this diagnosis.
+
+# G045 Consistent Sheet Spacing And Piano Exclusion Design
+
+## Plan
+
+- [x] Define one page-layout policy that preserves aspect ratio and uses a globally constant sheet gap without inflating sparse pages.
+- [x] Define staff-anchored vertical padding normalization so visible ink spacing matches placement spacing.
+- [x] Define a piano-boundary classifier that crops wide keyboards before normalization without erasing staff lines or musical context.
+- [x] Specify failing-first fixtures, integration coverage, and same-video acceptance metrics for implementation.
+
+## Review
+
+- Piano exclusion belongs in `server/score-analysis.ts`, before normalization. Below the last detected staff, cut at the first connected non-notation band that spans at least 70% of the frame width and is at least two staff gaps tall, or at a sustained non-paper window. This catches wide neutral and colored keyboards while preserving thin staff lines, beams, barlines, and isolated musical tails.
+- Keep `removePhotographicComponents` for compact side logos only. Expanding it to erase wide components would also classify legitimate full-width staff systems as removable and can destroy notation.
+- After piano exclusion and paper normalization, trim only blank outer rows around the remaining musical ink and add one fixed staff-relative top/bottom padding. Page packing must use these normalized dimensions so equal placement gaps also become equal visible ink gaps.
+- Replace per-page `resolvedGap` expansion with one fixed PDF-space gap. Greedily pack by actual normalized height, rebalance adjacent pages only when moving a trailing score reduces height imbalance, and place the whole fixed-gap group within the page's outer whitespace. A sparse final page keeps outer whitespace instead of inventing a larger inter-score gap.
+- RED fixtures must use real-derived characteristics from `dX4RlolT9O0`: a 92%-wide neutral keyboard, a 93.4%-wide colored keyboard, shifted equivalent scores with different outer whitespace, and multiple pages with different score heights. Preservation fixtures must cover full-width staff lines, beams, colored notation, tempo/chord text, and low musical tails.
+- Same-video acceptance: zero retained non-notation components wider than 70% below the last staff; every normalized score has identical staff-relative outer padding within one pixel; every inter-score placement gap is the configured constant within one pixel; no musical ink touches a crop edge; score order and aspect ratios remain unchanged. The final page may retain outer whitespace when content is insufficient.
+- This is an implementation specification only; no product code was changed.
+
+# G046 Consistent Sheet Spacing And Piano Exclusion Implementation
+
+## Plan
+
+- [x] Add failing regressions for wide neutral/colored piano boundaries, normalized vertical whitespace, and fixed cross-page score gaps.
+- [x] Crop wide keyboard bands below the last detected staff before score normalization while preserving low musical content.
+- [x] Normalize blank outer rows to fixed staff-relative padding before hashing and page packing.
+- [x] Replace per-page expanded gaps with one fixed gap and balanced outer whitespace without changing score aspect ratios or order.
+- [x] Run focused RED/GREEN tests, TypeScript diagnostics, the full verification gate, and nonvisual same-video PDF metrics; do not run browser, screenshot, or manual QA.
+
+## Review
+
+- Root causes: white-key rows passed the paper-brightness gate, and transition frames let a dense keyboard touching the lower frame edge become a standalone staff candidate. Per-page `resolvedGap` also inflated each page's score gap independently, while variable blank crop rows changed visible spacing again.
+- Crop analysis now finds wide connected components once per frame. A dense component touching the lower edge becomes a hard piano boundary before staff selection, candidates inside it are rejected, and a wide component below valid staffs truncates the crop without removing low musical tails.
+- Score normalization trims only outer blank rows after compact-photo cleanup and restores one source-scaled staff gap above and below the remaining ink. Hashing and page packing therefore use stable normalized dimensions.
+- Page placement keeps the configured 16px gap on every page and divides unused printable height equally between the top and bottom outer margins. Score order, aspect ratio, greedy height packing, and tall-image compression remain unchanged.
+- RED evidence: the old layout produced a 1,368px gap instead of 16px; the wide colored keyboard left 5,838 colored pixels; equivalent notation normalized to heights 120 and 220. The actual video also exposed keyboard-only frames at rows 615-719 that were accepted as staffs.
+- GREEN evidence: 36/36 focused tests passed. Reprocessing all 495 frames from `dX4RlolT9O0` reduced 23 contaminated candidates to 16 score-only candidates; every retained image had zero colored piano pixels and score-like dark-pixel density 0.089-0.116. The three PDF pages used exact 16px gaps and equal top/bottom outer margins on each page.
+- Final verification: `npm run verify` passed TypeScript, 184/184 tests, the standalone web build, and the extension build. Browser, screenshot, and manual visual QA were not run per the user's instruction.
+
+# G047 ULW Research: Next Improvement Opportunities
+
+## Plan
+
+- [x] Establish the current product intent, architecture, dirty-worktree boundary, and auditable research ledgers.
+- [x] Saturate 14 independent codebase, research, OSS, product, platform, UX, and red-team axes in parallel.
+- [x] Run at least two EXPAND waves and close every returned lead as investigated, duplicate, or dead end.
+- [x] Empirically verify contested quality, performance, compatibility, and operational claims.
+- [x] Rank improvements by user impact, confidence, implementation effort, and dependency order.
+- [x] Produce and validate cited Markdown, HTML, and PDF research artifacts without changing product code.
+
+## Review
+
+- Completed four research waves across 14 independent axes. The observation manifest closes O-001 through O-034, and the expansion log has no remaining unchecked lead.
+- Highest-confidence P0 findings are the standalone UTF-8/markup/abort baseline and the local-only versus remote job-processing boundary. P1 follows with an explicit PDF physical-size/DPI contract and a rights-cleared, replayable corpus before broader quality tuning.
+- Product semantics remain intentionally split: the extension preserves non-consecutive occurrences and context, while standalone suppresses globally repeated score systems. The report does not relabel this boundary as an identity bug.
+- Repository verification remained green: TypeScript, 197/197 Node tests, standalone build (105 modules), extension build (225 modules), and `git diff --check` all exited 0. Browser/CDP verification of the product UI itself remained unavailable and is not claimed.
+- Research artifacts: `.omo/ulw-research/20260724-004000/SYNTHESIS.md`, `REPORT.html`, `REPORT.pdf`, and `VALIDATION.md`. The final PDF is 8 tagged A4 pages; exact 375/768/1280 captures and all 8 PDF rasters passed fresh independent integrity and Korean/CJK visual gates.
+- No product source or test file was changed by this research task; pre-existing dirty-worktree changes were preserved.
+# G048 Working-Tree Fingerprint Baseline
+
+## Plan
+
+- [x] Seal the pre-edit baseline with inventory, scoped diffs, ownership hashes, and TEMP inventory.
+- [x] Add a RED-first deterministic cached-and-untracked working-tree fingerprint CLI and isolated mutation tests.
+- [x] Capture repeatable execution fingerprints and final scope evidence.
+
+## Review
+
+- Placeholder for caller review; execution evidence is recorded under the active attempt baseline directory.

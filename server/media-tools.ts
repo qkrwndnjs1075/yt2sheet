@@ -13,10 +13,11 @@ export const defaultMediaTools: MediaTools = {
   ffprobe: process.env.FFPROBE_PATH?.trim() || "ffprobe"
 };
 
-type RunOptions = {
+export type RunOptions = {
   readonly cwd?: string;
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
+  readonly signal?: AbortSignal;
 };
 
 export async function assertMediaTools(tools: MediaTools): Promise<void> {
@@ -34,9 +35,14 @@ export async function assertMediaTools(tools: MediaTools): Promise<void> {
 }
 
 export function runProcess(executable: string, args: readonly string[], options: RunOptions = {}): Promise<string> {
+  if (options.signal?.aborted) {
+    return Promise.reject(createAbortError());
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(executable, [...args], {
       cwd: options.cwd,
+      detached: process.platform !== "win32",
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
@@ -45,9 +51,25 @@ export function runProcess(executable: string, args: readonly string[], options:
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let termination: "abort" | "timeout" | null = null;
+    const abortHandler = (): void => {
+      if (settled || termination !== null) {
+        return;
+      }
+      termination = "abort";
+      clearTimeout(timer);
+      terminateProcessTree(child).then(
+        () => finish(createAbortError()),
+        () => finish(createAbortError())
+      );
+    };
+    options.signal?.addEventListener("abort", abortHandler, { once: true });
     const timer = setTimeout(() => {
-      child.kill();
-      finish(new Error(`Process timed out: ${executable}`));
+      termination = "timeout";
+      terminateProcessTree(child).then(
+        () => finish(new Error(`Process timed out: ${executable}`)),
+        () => finish(new Error(`Process timed out: ${executable}`))
+      );
     }, options.timeoutMs ?? 30 * 60_000);
 
     child.stdout.setEncoding("utf8");
@@ -58,8 +80,15 @@ export function runProcess(executable: string, args: readonly string[], options:
     child.stderr.on("data", (chunk: string) => {
       stderr = appendBounded(stderr, chunk, limit);
     });
-    child.once("error", finish);
+    child.once("error", (error) => {
+      if (termination === null) {
+        finish(error);
+      }
+    });
     child.once("close", (code) => {
+      if (termination !== null) {
+        return;
+      }
       if (code === 0) {
         finish(null, stdout);
         return;
@@ -74,12 +103,61 @@ export function runProcess(executable: string, args: readonly string[], options:
       }
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abortHandler);
       if (error) {
         reject(error);
       } else {
         resolve(output);
       }
     }
+  });
+}
+
+function createAbortError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
+function terminateProcessTree(child: { readonly pid?: number; kill(): boolean }): Promise<void> {
+  if (child.pid === undefined) {
+    child.kill();
+    return Promise.resolve();
+  }
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return Promise.resolve();
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
+        return Promise.resolve();
+      }
+      return Promise.reject(error);
+    }
+  }
+
+  return new Promise((resolve) => {
+    const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      shell: false,
+      windowsHide: true,
+      stdio: "ignore"
+    });
+    let completed = false;
+    const complete = (): void => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      resolve();
+    };
+    killer.once("error", () => {
+      child.kill();
+      complete();
+    });
+    killer.once("close", (code) => {
+      if (code !== 0) {
+        child.kill();
+      }
+      complete();
+    });
   });
 }
 

@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { computeScorePagePlacements, packScorePages } from "../src/shared/score-page-layout";
-import { SCORE_IDENTITY_CONFIG } from "../src/shared/score-identity-config";
+import {
+  SCORE_PDF_METADATA,
+  STANDALONE_SCORE_PDF,
+  type ScorePdfPageLayout,
+  type ScorePdfContract
+} from "../src/shared/score-identity-config";
 import { buildPreprocessedFrame, findScoreCrop, hammingDistance, isNearDuplicate } from "./score-analysis";
 import { createDifferenceHash, createDominantInkHash, normalizeScoreImage } from "./score-image-normalizer";
 import { ScorePipelineError } from "./score-job-service";
@@ -23,42 +28,65 @@ export type ScorePdfResult = {
   readonly scoreCount: number;
 };
 
+export type CreateScorePdfOptions = {
+  readonly onProgress?: (progress: number) => void;
+  readonly signal?: AbortSignal;
+  readonly metadata: {
+    readonly videoId: string;
+    readonly createdAt: Date;
+  };
+};
+
 export async function createScorePdfFromFrames(
   framePaths: readonly string[],
   workspace: string,
   outputPath: string,
-  onProgress: (progress: number) => void = () => undefined
+  options: CreateScorePdfOptions
 ): Promise<ScorePdfResult> {
+  const onProgress = options.onProgress ?? (() => undefined);
+  const rasterLayout = rasterLayoutFor(STANDALONE_SCORE_PDF);
   const scoreDirectory = join(workspace, "scores");
   const pageDirectory = join(workspace, "pages");
+  throwIfCancelled(options.signal);
   await mkdir(scoreDirectory, { recursive: true });
+  throwIfCancelled(options.signal);
   await mkdir(pageDirectory, { recursive: true });
+  throwIfCancelled(options.signal);
   const scores: AcceptedScore[] = [];
 
   for (let index = 0; index < framePaths.length; index += 1) {
-    const candidate = await analyzeFrame(framePaths[index], scoreDirectory, scores.length + 1);
+    throwIfCancelled(options.signal);
+    const candidate = await analyzeFrame(framePaths[index], scoreDirectory, scores.length + 1, rasterLayout);
+    throwIfCancelled(options.signal);
     if (candidate && !scores.some((score) => isDuplicateScore(score, candidate))) {
       scores.push(candidate);
     } else if (candidate) {
       await rm(candidate.path, { force: true });
+      throwIfCancelled(options.signal);
     }
     onProgress(45 + ((index + 1) / Math.max(1, framePaths.length)) * 30);
+    throwIfCancelled(options.signal);
   }
 
   if (scores.length === 0) {
     throw new ScorePipelineError("NO_SCORE_FOUND", "영상에서 오선 또는 TAB 악보를 찾지 못했습니다.");
   }
 
-  const pages = packScorePages(scores);
+  const pages = packScorePages(scores, rasterLayout);
   const pagePaths: string[] = [];
   for (let index = 0; index < pages.length; index += 1) {
+    throwIfCancelled(options.signal);
     const pagePath = join(pageDirectory, `page-${String(index + 1).padStart(4, "0")}.png`);
-    await renderPage(pages[index], pagePath);
+    await renderPage(pages[index], pagePath, rasterLayout);
+    throwIfCancelled(options.signal);
     pagePaths.push(pagePath);
   }
   onProgress(88);
-  await writePdf(pagePaths, outputPath);
+  throwIfCancelled(options.signal);
+  await writePdf(pagePaths, outputPath, STANDALONE_SCORE_PDF, options.metadata, options.signal);
+  throwIfCancelled(options.signal);
   onProgress(98);
+  throwIfCancelled(options.signal);
   return { pageCount: pagePaths.length, scoreCount: scores.length };
 }
 
@@ -67,7 +95,12 @@ export async function listExtractedFrames(frameDirectory: string): Promise<strin
   return names.filter((name) => /^frame-\d+\.(?:jpg|png)$/i.test(name)).sort().map((name) => join(frameDirectory, name));
 }
 
-async function analyzeFrame(framePath: string, outputDirectory: string, outputIndex: number): Promise<AcceptedScore | null> {
+async function analyzeFrame(
+  framePath: string,
+  outputDirectory: string,
+  outputIndex: number,
+  rasterLayout: ScorePdfPageLayout
+): Promise<AcceptedScore | null> {
   const image = sharp(framePath, { limitInputPixels: 40_000_000 });
   const sourceMetadata = await image.metadata();
   if (!sourceMetadata.width || !sourceMetadata.height) {
@@ -95,8 +128,9 @@ async function analyzeFrame(framePath: string, outputDirectory: string, outputIn
     width: crop.width * scaleX,
     height: crop.height * scaleY
   };
-  const cropped = await image.clone().extract(roundCrop(sourceCrop, sourceMetadata.width, sourceMetadata.height)).png().toBuffer();
-  const normalized = await normalizeScoreImage(cropped);
+  const cropBounds = roundCrop(sourceCrop, sourceMetadata.width, sourceMetadata.height);
+  const cropped = await image.clone().extract(cropBounds).png().toBuffer();
+  const normalized = await normalizeScoreImage(cropped, spacingScanBandFor(cropBounds.width, rasterLayout));
   const metadata = await sharp(normalized).metadata();
   if (!metadata.width || !metadata.height) {
     return null;
@@ -113,9 +147,9 @@ function isDuplicateScore(left: AcceptedScore, right: AcceptedScore): boolean {
     || hammingDistance(left.dominantHash, right.dominantHash) <= DOMINANT_DUPLICATE_DISTANCE;
 }
 
-async function renderPage(scores: readonly AcceptedScore[], outputPath: string): Promise<void> {
-  const { pageWidth, pageHeight } = SCORE_IDENTITY_CONFIG.page;
-  const placements = computeScorePagePlacements(scores.map((score) => score.image));
+async function renderPage(scores: readonly AcceptedScore[], outputPath: string, layout: ScorePdfPageLayout): Promise<void> {
+  const { pageWidth, pageHeight } = layout;
+  const placements = computeScorePagePlacements(scores.map((score) => score.image), layout);
   const composites = await Promise.all(scores.map(async (score, index) => {
     const placement = placements[index];
     const width = Math.max(1, Math.round(placement.width));
@@ -129,15 +163,51 @@ async function renderPage(scores: readonly AcceptedScore[], outputPath: string):
     .toFile(outputPath);
 }
 
-async function writePdf(pagePaths: readonly string[], outputPath: string): Promise<void> {
+async function writePdf(
+  pagePaths: readonly string[],
+  outputPath: string,
+  contract: ScorePdfContract,
+  metadata: CreateScorePdfOptions["metadata"],
+  signal?: AbortSignal
+): Promise<void> {
   const pdf = await PDFDocument.create();
-  const { pageWidth, pageHeight } = SCORE_IDENTITY_CONFIG.page;
+  pdf.setTitle(`yt2sheet score - ${metadata.videoId}`);
+  pdf.setSubject(SCORE_PDF_METADATA.subject);
+  pdf.setKeywords([...SCORE_PDF_METADATA.keywords]);
+  pdf.setCreator(SCORE_PDF_METADATA.creator);
+  pdf.setProducer(SCORE_PDF_METADATA.producer);
+  pdf.setCreationDate(metadata.createdAt);
+  pdf.setModificationDate(metadata.createdAt);
   for (const pagePath of pagePaths) {
+    throwIfCancelled(signal);
     const embedded = await pdf.embedPng(await readFile(pagePath));
-    const page = pdf.addPage([pageWidth, pageHeight]);
-    page.drawImage(embedded, { x: 0, y: 0, width: pageWidth, height: pageHeight });
+    throwIfCancelled(signal);
+    const page = pdf.addPage([contract.pageWidth, contract.pageHeight]);
+    page.drawImage(embedded, { x: 0, y: 0, width: contract.pageWidth, height: contract.pageHeight });
   }
+  throwIfCancelled(signal);
   await writeFile(outputPath, await pdf.save());
+  throwIfCancelled(signal);
+}
+
+function rasterLayoutFor(contract: ScorePdfContract): ScorePdfPageLayout {
+  return {
+    pageWidth: contract.rasterWidth,
+    pageHeight: contract.rasterHeight,
+    padding: contract.padding,
+    gap: contract.gap
+  };
+}
+
+function spacingScanBandFor(sourceWidth: number, layout: ScorePdfPageLayout): number {
+  const contentWidth = Math.max(1, layout.pageWidth - layout.padding * 2);
+  return sourceWidth * layout.gap / contentWidth;
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
 }
 
 export function roundCrop(crop: { x: number; y: number; width: number; height: number }, width: number, height: number) {

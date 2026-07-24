@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import pino from "pino";
-import { defaultMediaTools, runProcess, type MediaTools } from "./media-tools";
-import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type ScoreJobResult } from "./score-job-service";
+import { defaultMediaTools, runProcess, type MediaTools, type RunOptions } from "./media-tools";
+import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type ScoreJobProcessorContext, type ScoreJobResult } from "./score-job-service";
 import { createScorePdfFromFrames, listExtractedFrames } from "./score-video-processor";
+import { createOwnedWorkDirectoryName } from "./workspace-cleanup";
 
 const logger = pino({ name: "yt2sheet-server" });
 const MAX_DURATION_SECONDS = 2 * 60 * 60;
@@ -13,41 +14,72 @@ const MAX_EXTRACTED_FRAMES = 3_600;
 type ProcessorOptions = {
   readonly dataRoot: string;
   readonly tools?: MediaTools;
+  readonly clock?: () => Date;
+  readonly processRunner?: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
+  readonly frameLister?: typeof listExtractedFrames;
+  readonly pdfCreator?: typeof createScorePdfFromFrames;
 };
 
 export class YouTubeScoreProcessor implements ScoreJobProcessor {
   private readonly tools: MediaTools;
+  private readonly clock: () => Date;
+  private readonly processRunner: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
+  private readonly frameLister: typeof listExtractedFrames;
+  private readonly pdfCreator: typeof createScorePdfFromFrames;
 
   constructor(private readonly options: ProcessorOptions) {
     this.tools = options.tools ?? defaultMediaTools;
+    this.clock = options.clock ?? (() => new Date());
+    this.processRunner = options.processRunner ?? runProcess;
+    this.frameLister = options.frameLister ?? listExtractedFrames;
+    this.pdfCreator = options.pdfCreator ?? createScorePdfFromFrames;
   }
 
-  async process(input: ScoreJobInput, onProgress: (progress: number) => void): Promise<ScoreJobResult> {
+  async process(input: ScoreJobInput, context: ScoreJobProcessorContext): Promise<ScoreJobResult> {
     const runId = randomUUID();
-    const workDirectory = join(this.options.dataRoot, "work", runId);
+    const workDirectory = join(this.options.dataRoot, "work", createOwnedWorkDirectoryName(runId));
     const frameDirectory = join(workDirectory, "frames");
     const resultDirectory = join(this.options.dataRoot, "results");
-    const outputPath = join(resultDirectory, `${runId}.pdf`);
-    await Promise.all([mkdir(frameDirectory, { recursive: true }), mkdir(resultDirectory, { recursive: true })]);
+    const outputPath = join(resultDirectory, `yt2sheet-result-p${process.pid}-${runId}.pdf`);
+    const { onProgress, signal } = context;
 
     try {
-      const duration = await this.readRemoteDuration(input.videoUrl);
+      throwIfCancelled(signal);
+      await Promise.all([mkdir(frameDirectory, { recursive: true }), mkdir(resultDirectory, { recursive: true })]);
+      throwIfCancelled(signal);
+      const duration = await this.readRemoteDuration(input.videoUrl, signal);
+      throwIfCancelled(signal);
       onProgress(12);
-      const videoPath = await this.downloadVideo(input.videoUrl, workDirectory);
+      throwIfCancelled(signal);
+      const videoPath = await this.downloadVideo(input.videoUrl, workDirectory, signal);
+      throwIfCancelled(signal);
       onProgress(32);
-      const verifiedDuration = await this.readLocalDuration(videoPath);
+      throwIfCancelled(signal);
+      const verifiedDuration = await this.readLocalDuration(videoPath, signal);
       this.assertDuration(verifiedDuration || duration);
-      await this.extractFrames(videoPath, frameDirectory, verifiedDuration || duration);
+      throwIfCancelled(signal);
+      await this.extractFrames(videoPath, frameDirectory, verifiedDuration || duration, signal);
+      throwIfCancelled(signal);
       onProgress(45);
-      const frames = await listExtractedFrames(frameDirectory);
+      throwIfCancelled(signal);
+      const frames = await this.frameLister(frameDirectory);
+      throwIfCancelled(signal);
       if (frames.length === 0) {
         throw new ScorePipelineError("NO_FRAMES_EXTRACTED", "영상에서 분석할 프레임을 추출하지 못했습니다.");
       }
-      const result = await createScorePdfFromFrames(frames, workDirectory, outputPath, onProgress);
+      const result = await this.pdfCreator(frames, workDirectory, outputPath, {
+        onProgress,
+        signal,
+        metadata: { videoId: input.videoId, createdAt: this.clock() }
+      });
+      throwIfCancelled(signal);
       logger.info({ videoId: input.videoId, scoreCount: result.scoreCount, pageCount: result.pageCount }, "score job completed");
       return { filePath: outputPath, pageCount: result.pageCount };
     } catch (error) {
       await rm(outputPath, { force: true });
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
       if (error instanceof ScorePipelineError) {
         throw error;
       }
@@ -58,15 +90,15 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     }
   }
 
-  private async readRemoteDuration(videoUrl: string): Promise<number> {
-    const output = await runProcess(this.tools.ytDlp, ["--no-playlist", "--skip-download", "--print", "%(duration)s", videoUrl]);
+  private async readRemoteDuration(videoUrl: string, signal: AbortSignal): Promise<number> {
+    const output = await this.processRunner(this.tools.ytDlp, ["--no-playlist", "--skip-download", "--print", "%(duration)s", videoUrl], { signal });
     const duration = Number(output.trim().split(/\r?\n/).at(-1));
     this.assertDuration(duration);
     return duration;
   }
 
-  private async downloadVideo(videoUrl: string, workDirectory: string): Promise<string> {
-    const output = await runProcess(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg));
+  private async downloadVideo(videoUrl: string, workDirectory: string, signal: AbortSignal): Promise<string> {
+    const output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg), { signal });
     const reportedPath = output.trim().split(/\r?\n/).filter(Boolean).at(-1);
     if (!reportedPath) {
       throw new ScorePipelineError("DOWNLOAD_FAILED", "YouTube 영상을 다운로드하지 못했습니다.");
@@ -79,13 +111,13 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     return absolutePath;
   }
 
-  private async readLocalDuration(videoPath: string): Promise<number> {
-    const output = await runProcess(this.tools.ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nk=1:nw=1", videoPath]);
+  private async readLocalDuration(videoPath: string, signal: AbortSignal): Promise<number> {
+    const output = await this.processRunner(this.tools.ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nk=1:nw=1", videoPath], { signal });
     return Number(output.trim());
   }
 
-  private async extractFrames(videoPath: string, frameDirectory: string, duration: number): Promise<void> {
-    await runProcess(this.tools.ffmpeg, buildFrameExtractionArguments(videoPath, frameDirectory, duration));
+  private async extractFrames(videoPath: string, frameDirectory: string, duration: number, signal: AbortSignal): Promise<void> {
+    await this.processRunner(this.tools.ffmpeg, buildFrameExtractionArguments(videoPath, frameDirectory, duration), { signal });
   }
 
   private assertDuration(duration: number): void {
@@ -95,6 +127,12 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     if (duration > MAX_DURATION_SECONDS) {
       throw new ScorePipelineError("VIDEO_TOO_LONG", "현재는 2시간 이하 영상만 처리할 수 있습니다.");
     }
+  }
+}
+
+function throwIfCancelled(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
   }
 }
 

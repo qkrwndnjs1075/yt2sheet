@@ -7,6 +7,7 @@
     "build": "vite build",
     "build:web": "vite build --config vite.web.config.ts",
     "build:test": "tsc -p tsconfig.test.json",
+    "benchmark:score": "tsx server/benchmark/cli.ts",
     "dev": "concurrently --kill-others --names api,web --prefix-colors blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite --config vite.web.config.ts",

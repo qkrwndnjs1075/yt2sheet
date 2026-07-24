@@ -152,11 +152,15 @@ Typography uses `Pretendard`, `Inter`, `system-ui`, `-apple-system`, `BlinkMacSy
 
 ### Layout and components
 
+Standalone job controls produce one PDF using the established 1200 x 1700 score-sheet layout. The page does not expose paper-format choices and the POST body contains only the canonical video identity. The active cancel control follows submit in keyboard order, remains hidden until a queued or running job ID is known, and uses the existing control-height token, which exceeds the 44px touch-target minimum.
+
+The job status region is exactly `role="status"`, `aria-live="polite"`, and `aria-atomic="true"`. It renders ready, submitting, queued, running, succeeded, failed, cancelled, and interrupted-or-expired states through real DOM text-node replacement. A success link is accepted only when its relative path is exactly bound to the returned job ID.
+
 The page has one header and one workspace. The header contains the `yt2sheet` wordmark and the quiet descriptor `Link to score`. The workspace is a two-column grid at `960px` and above: task copy and URL form on the left, live process/result surface on the right. Below `960px`, it becomes a single column; below `560px`, page and surface padding reduce while controls retain at least `44px` height. The content width is capped at `1180px`; the form reading measure is capped at `620px`.
 
-Link Form: A persistent `<label>` names the YouTube URL field. The input and submit action share a horizontal row above `640px` and stack below it. Input, button, and visible focus ring use the standalone tokens. Placeholder text is an example, never the only label. The button text is always an action (`악보 만들기`, `다시 시도`) rather than a vague confirmation.
+Link Form: A persistent `<label>` names the YouTube URL field. URL input and submit action share a horizontal row above `640px` and stack below it. Input, button, and visible focus ring use the standalone tokens. Placeholder text is an example, never the only label. The primary button text is always an action (`악보 만들기`, `다시 시도`) rather than a vague confirmation.
 
-Process Surface: One region with `aria-live="polite"` renders exactly one state at a time: ready guidance, submitting, queued, processing, completed, or failed. Queued and processing states show a determinate progress bar only when the API supplies progress; otherwise they show direct status text without fake percentages. Completed state exposes the result file name and one download link from the API. Failed state explains the recoverable cause and keeps the original URL available for retry.
+Process Surface: One `role="status"`, `aria-live="polite"`, `aria-atomic="true"` region renders exactly one state at a time: ready guidance, submitting, queued, processing, cancelled, interrupted-or-expired, completed, or failed. Queued and processing states show a determinate progress bar only when the API supplies progress; otherwise they show direct status text without fake percentages. Completed state exposes the result file name and one exact job-bound relative download link from the API. Failed, cancelled, and interrupted-or-expired states explain the recoverable cause and keep the original URL available for retry.
 
 Notation Motif: The process surface may use five thin horizontal rules as a static structural motif. They must be CSS decoration with `aria-hidden="true"`, never a screenshot or fake score result, and must not animate. The actual result area remains semantic DOM.
 
@@ -164,9 +168,11 @@ Trust Note: A compact note below the form states that processing continues on th
 
 ### Interaction, responsive, and adaptive states
 
-Submission locks only the submit control while preserving selectable input text. Malformed input returns focus to the input and uses a visible inline error with `role="alert"`. Network or job failure restores an enabled action and never leaves a stale progress bar or download link. A new submission cancels the previous polling request before starting another.
+Malformed input sets `aria-invalid="true"` and returns focus to the URL field. While an active known job is being cancelled, the browser sends DELETE before locally aborting polling. Cancellation, terminal, network-error, and known-job-404 paths re-enable submit; cancellation returns focus to that enabled submit action. A known-job 404 is recoverable interrupted-or-expired state. Per-run token identity guards every update, terminal response, error, cancellation response, catch, and finally path so stale work cannot alter a newer run. These are DOM and focus observables only; no actual screen-reader announcement is claimed.
 
-Keyboard order is wordmark, link field, primary action, then any result download. All interactive elements have a `3px` focus ring with at least `2px` offset. Touch targets are at least `44px`. At 200 percent zoom, the page remains one logical column without horizontal scrolling. `prefers-reduced-motion: reduce` removes transitions; default motion is limited to a short opacity change on real state replacement and a progress fill transform. High-contrast and forced-colors modes retain native borders and focus visibility.
+Submission locks only the submit control while preserving selectable input text. Malformed input returns focus to the input, sets `aria-invalid="true"`, and uses a visible inline error with `role="alert"`. Network, cancellation, terminal-job, and known-job-404 paths restore an enabled action and never leave a stale progress bar or download link. A new submission cancels the previous polling request before starting another.
+
+Keyboard order is wordmark, URL input, primary action, active cancel action, then any result download. All interactive elements have a `3px` focus ring with at least `2px` offset. Touch targets are at least `44px`. At 200 percent zoom, the page remains one logical column without horizontal scrolling. `prefers-reduced-motion: reduce` removes transitions; default motion is limited to a short opacity change on real state replacement and a progress fill transform. High-contrast and forced-colors modes retain native borders and focus visibility.
 
 ### Accessibility constraints and accepted debt
 

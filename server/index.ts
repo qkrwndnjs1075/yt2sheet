@@ -4,6 +4,7 @@ import pino from "pino";
 import { createScoreJobApp } from "./app";
 import { assertMediaTools, defaultMediaTools } from "./media-tools";
 import { ScoreJobService } from "./score-job-service";
+import { cleanupOwnedResultFiles, cleanupOwnedWorkDirectories, shutdownScoreJobServer } from "./workspace-cleanup";
 import { YouTubeScoreProcessor } from "./youtube-score-processor";
 
 const logger = pino({ name: "yt2sheet-server" });
@@ -18,17 +19,31 @@ void start().catch((error: unknown) => {
 
 async function start(): Promise<void> {
   await assertMediaTools(defaultMediaTools);
+  await cleanupOwnedResultFiles(dataRoot);
+  await cleanupOwnedWorkDirectories(dataRoot);
   const processor = new YouTubeScoreProcessor({ dataRoot, tools: defaultMediaTools });
-  const service = new ScoreJobService(processor);
+  const service = new ScoreJobService(processor, { dataRoot });
   const app = createScoreJobApp(service);
   const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     logger.info({ host: info.address, port: info.port, dataRoot }, "server listening");
   });
 
+  let shutdownStarted = false;
+  const shutdown = async (signal: "SIGINT" | "SIGTERM"): Promise<void> => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    try {
+      await shutdownScoreJobServer(service, server);
+      logger.info({ signal }, "server stopped");
+      process.exit(0);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new TypeError(String(error));
+      logger.error({ err: failure, signal }, "server shutdown failed");
+      process.exit(1);
+    }
+  };
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      server.close(() => process.exit(0));
-    });
+    process.once(signal, () => { void shutdown(signal); });
   }
 }
 

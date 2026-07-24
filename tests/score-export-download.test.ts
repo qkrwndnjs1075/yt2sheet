@@ -154,15 +154,32 @@ test("download filename sanitizer removes browser-invalid filename characters", 
   assert.equal(safeFileBaseName("   "), "score-export");
 });
 
-test("score page layout stacks systems with bounded gaps instead of vertically justifying sparse pages", () => {
-  const placements = computeScorePagePlacements([
+test("score page layout keeps a fixed system gap and balances outer whitespace", () => {
+  // Given: two compact scores that leave unused space after fitting to the printable width.
+  const imageSizes = [
     { width: 1600, height: 180 },
     { width: 1600, height: 180 }
-  ]);
-  const actualGap = placements[1].y - (placements[0].y + placements[0].height);
+  ];
 
-  assert.equal(Math.round(actualGap), SCORE_IDENTITY_CONFIG.page.gap);
-  assert.ok(placements[1].y < SCORE_IDENTITY_CONFIG.page.pageHeight / 2);
+  // When: placements are computed for one PDF page.
+  const placements = computeScorePagePlacements(imageSizes);
+
+  // Then: unused height stays outside the score group and the configured gap remains fixed.
+  const first = placements[0];
+  const last = placements[placements.length - 1];
+  const actualGap = placements[1].y - (placements[0].y + placements[0].height);
+  const topWhitespace = first.y - SCORE_IDENTITY_CONFIG.page.padding;
+  const bottomWhitespace = SCORE_IDENTITY_CONFIG.page.pageHeight
+    - SCORE_IDENTITY_CONFIG.page.padding
+    - (last.y + last.height);
+
+  assert.ok(first);
+  assert.ok(last);
+  assert.equal(SCORE_IDENTITY_CONFIG.page.gap, 16);
+  assert.equal(Math.round(actualGap), 16);
+  assert.ok(Math.abs(topWhitespace - bottomWhitespace) < 1);
+  assert.equal(first.width / first.height, 1600 / 180);
+  assert.equal(last.width / last.height, 1600 / 180);
 });
 
 test("score page layout keeps an extremely tall score inside printable bounds", () => {

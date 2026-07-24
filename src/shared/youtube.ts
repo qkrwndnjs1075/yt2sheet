@@ -7,6 +7,10 @@ export function parseYouTubeVideoId(url: string): string | null {
     return null;
   }
 
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return null;
+  }
+
   const host = parsed.hostname.toLowerCase();
 
   if (host === "youtu.be") {
@@ -49,7 +53,7 @@ function isYouTubeHost(host: string): boolean {
 }
 
 function cleanVideoId(value: string | null): string | null {
-  if (!value || !/^[a-zA-Z0-9_-]{6,}$/.test(value)) {
+  if (!value || !/^[a-zA-Z0-9_-]{11}$/.test(value)) {
     return null;
   }
 

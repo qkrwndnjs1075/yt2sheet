@@ -113,8 +113,11 @@
   .link-form button { padding: 0 var(--web-space-5); cursor: pointer; }
   .link-form button:hover:not(:disabled) { background: var(--web-primary-hover); }
   .link-form button:disabled { cursor: progress; opacity: 0.65; }
+  .job-cancel { width: 100%; min-height: var(--web-control-height); margin-top: var(--web-space-2); border: 1px solid var(--web-border-strong); border-radius: var(--web-radius-sm); background: var(--web-surface); color: var(--web-ink); font-size: var(--web-type-control); font-weight: 730; cursor: pointer; }
+  .job-cancel:hover:not(:disabled) { background: var(--web-surface-muted); }
   .field-help, .field-error { margin-top: var(--web-space-2); font-size: var(--web-type-meta); }
   .field-help { color: var(--web-muted-ink); }
+  .field-help__phrase { white-space: nowrap; }
   .field-error { color: var(--web-error); font-weight: 650; }
 
   .trust-note { max-width: var(--web-form-max-width); margin-top: var(--web-space-6); display: grid; grid-template-columns: auto 1fr; gap: var(--web-space-3); padding-top: var(--web-space-5); border-top: 1px solid var(--web-border); color: var(--web-muted-ink); font-size: var(--web-type-note); }

@@ -15,6 +15,17 @@ type StaffBounds = {
   readonly gap: number;
 };
 
+type WideComponent = {
+  readonly top: number;
+  readonly bottom: number;
+  readonly height: number;
+  readonly density: number;
+};
+
+export type ScoreCrop = Rect & {
+  readonly staffGap: number;
+};
+
 const SIMPLE_THRESHOLD = 180;
 const TOP_MARGIN_GAPS = 12;
 const BOTTOM_MARGIN_GAPS = 2;
@@ -76,8 +87,20 @@ export function buildPreprocessedFrame(input: RawGrayscaleFrame): PreprocessedFr
   };
 }
 
-export function findScoreCrop(frame: PreprocessedFrame): Rect | null {
-  const detectedStaffs = new StaffCandidateDetector().find(frame, []).filter((staff) => isPaperBacked(frame, staff.rect));
+export function findScoreCrop(frame: PreprocessedFrame): ScoreCrop | null {
+  const paperBackedStaffs = new StaffCandidateDetector().find(frame, []).filter((staff) => isPaperBacked(frame, staff.rect));
+  if (paperBackedStaffs.length === 0) {
+    return null;
+  }
+  const wideComponents = findWideComponents(frame);
+  const bottomBoundary = wideComponents
+    .filter((component) => component.bottom >= frame.height - 1
+      && component.height >= frame.height * 0.08
+      && component.density >= 0.2)
+    .reduce<number | null>((boundary, component) => boundary === null ? component.top : Math.min(boundary, component.top), null);
+  const detectedStaffs = bottomBoundary === null
+    ? paperBackedStaffs
+    : paperBackedStaffs.filter((staff) => staff.rect.y + staff.rect.height <= bottomBoundary);
   if (detectedStaffs.length === 0) {
     return null;
   }
@@ -93,8 +116,54 @@ export function findScoreCrop(frame: PreprocessedFrame): Rect | null {
   const topLimit = Math.min(top - topMargin, content.top - largestGap);
   const bottomLimit = Math.max(bottom + bottomMargin, content.bottom + largestGap);
   const y = findPaperEdge(frame, Math.floor(top), Math.max(0, Math.floor(topLimit)), -1);
-  const cropBottom = findPaperEdge(frame, Math.ceil(bottom), Math.min(frame.originalHeight, Math.ceil(bottomLimit)), 1);
-  return { x: 0, y, width: frame.originalWidth, height: Math.max(1, cropBottom - y) };
+  const lowerLimit = Math.min(frame.originalHeight, Math.ceil(bottomLimit));
+  const paperBottom = findPaperEdge(frame, Math.ceil(bottom), lowerLimit, 1);
+  const wideBoundary = bottomBoundary ?? wideComponents
+    .filter((component) => component.top >= bottom + largestGap && component.height >= Math.max(8, largestGap * 1.5))
+    .reduce<number | null>((boundary, component) => boundary === null ? component.top : Math.min(boundary, component.top), null);
+  const cropBottom = wideBoundary === null ? paperBottom : Math.min(paperBottom, wideBoundary);
+  return { x: 0, y, width: frame.originalWidth, height: Math.max(1, cropBottom - y), staffGap: largestGap };
+}
+
+function findWideComponents(frame: PreprocessedFrame): WideComponent[] {
+  const pixelCount = frame.width * frame.height;
+  const visited = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+  const minimumWidth = frame.width * 0.7;
+  const components: WideComponent[] = [];
+
+  for (let start = 0; start < pixelCount; start += 1) {
+    if (visited[start] === 1 || frame.binary[start] === 0) continue;
+    let head = 0;
+    let tail = 1;
+    let minX = start % frame.width;
+    let maxX = minX;
+    let minY = Math.floor(start / frame.width);
+    let maxY = minY;
+    queue[0] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const pixel = queue[head++];
+      const x = pixel % frame.width;
+      const y = Math.floor(pixel / frame.width);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      for (const neighbor of [x > 0 ? pixel - 1 : -1, x + 1 < frame.width ? pixel + 1 : -1, y > 0 ? pixel - frame.width : -1, y + 1 < frame.height ? pixel + frame.width : -1]) {
+        if (neighbor >= 0 && visited[neighbor] === 0 && frame.binary[neighbor] === 1) {
+          visited[neighbor] = 1;
+          queue[tail++] = neighbor;
+        }
+      }
+    }
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    if (width >= minimumWidth) {
+      components.push({ top: minY, bottom: maxY, height, density: tail / (width * height) });
+    }
+  }
+  return components;
 }
 
 function findConnectedContentBounds(

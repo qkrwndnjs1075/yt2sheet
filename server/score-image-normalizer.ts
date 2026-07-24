@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import { cleanScoreImageArtifacts } from "./score-image-artifact-cleanup";
+import { isForeground } from "./score-image-pixels";
 
 const PAPER_CHANNEL_MIN = 205;
 const PAPER_CHROMA_MAX = 12;
@@ -6,7 +8,7 @@ const PHOTO_COMPONENT_RATIO = 0.003;
 const PHOTO_COLOR_PIXELS_MIN = 64;
 const PHOTO_BOUNDS_PADDING_RATIO = 0.12;
 
-export async function normalizeScoreImage(image: Buffer): Promise<Buffer> {
+export async function normalizeScoreImage(image: Buffer, verticalPadding = 0): Promise<Buffer> {
   const raw = await sharp(image).toColourspace("srgb").removeAlpha().raw().toBuffer({ resolveWithObject: true });
   for (let index = 0; index < raw.data.length; index += raw.info.channels) {
     const red = raw.data[index];
@@ -21,7 +23,18 @@ export async function normalizeScoreImage(image: Buffer): Promise<Buffer> {
     }
   }
   removePhotographicComponents(raw.data, raw.info);
-  return sharp(raw.data, { raw: raw.info }).png().toBuffer();
+  cleanScoreImageArtifacts(raw.data, raw.info);
+  const bounds = findVerticalInkBounds(raw.data, raw.info);
+  const normalized = sharp(raw.data, { raw: raw.info });
+  if (!bounds || verticalPadding <= 0) {
+    return normalized.png().toBuffer();
+  }
+  const padding = Math.max(1, Math.round(verticalPadding));
+  return normalized
+    .extract({ left: 0, top: bounds.top, width: raw.info.width, height: bounds.bottom - bounds.top + 1 })
+    .extend({ top: padding, bottom: padding, left: 0, right: 0, background: "white" })
+    .png()
+    .toBuffer();
 }
 
 export async function createDifferenceHash(image: Buffer): Promise<Uint8Array> {
@@ -119,17 +132,30 @@ function removePhotographicComponents(
   }
 }
 
-function isForeground(data: Buffer, pixel: number, channels: number): boolean {
-  const offset = pixel * channels;
-  return Math.min(data[offset], data[offset + 1], data[offset + 2]) < 250;
-}
-
 function isColored(data: Buffer, pixel: number, channels: number): boolean {
   const offset = pixel * channels;
   const red = data[offset];
   const green = data[offset + 1];
   const blue = data[offset + 2];
   return Math.max(red, green, blue) - Math.min(red, green, blue) > PAPER_CHROMA_MAX;
+}
+
+function findVerticalInkBounds(
+  data: Buffer,
+  info: { readonly width: number; readonly height: number; readonly channels: number }
+): { readonly top: number; readonly bottom: number } | null {
+  let top = info.height;
+  let bottom = -1;
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (isForeground(data, y * info.width + x, info.channels)) {
+        top = Math.min(top, y);
+        bottom = y;
+        break;
+      }
+    }
+  }
+  return bottom < top ? null : { top, bottom };
 }
 
 function findDominantInkBounds(data: Buffer, width: number, height: number): { readonly left: number; readonly top: number; readonly width: number; readonly height: number } {
