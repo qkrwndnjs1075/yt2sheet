@@ -33,6 +33,7 @@ const ANALYSIS_WIDTH = 1_280;
 const DOMINANT_DUPLICATE_DISTANCE = 8;
 const NOTATION_IDENTITY_CANDIDATE_DISTANCE = 34;
 const MAX_NOTATION_IDENTITY_STAFF_GAP_DELTA = 0.08;
+const DEFAULT_ANALYSIS_CONCURRENCY = 4;
 
 export type ScorePdfResult = {
   readonly pageCount: number;
@@ -42,6 +43,7 @@ export type ScorePdfResult = {
 export type CreateScorePdfOptions = {
   readonly onProgress?: (progress: number) => void;
   readonly signal?: AbortSignal;
+  readonly concurrency?: number;
   readonly metadata: {
     readonly videoId: string;
     readonly createdAt: Date;
@@ -63,35 +65,44 @@ export async function createScorePdfFromFrames(
   throwIfCancelled(options.signal);
   await mkdir(pageDirectory, { recursive: true });
   throwIfCancelled(options.signal);
-  const scores: AcceptedScore[] = [];
+  // Phase 1: 병렬 프레임 분석 (순서 보존, 중복 제거는 Phase 2에서)
+  const concurrency = Math.max(1, options.concurrency ?? DEFAULT_ANALYSIS_CONCURRENCY);
+  let completedFrames = 0;
+  const candidates = await mapWithConcurrency(
+    framePaths,
+    concurrency,
+    async (framePath, index) => {
+      throwIfCancelled(options.signal);
+      const candidate = await analyzeFrame(framePath, scoreDirectory, index + 1, rasterLayout);
+      completedFrames += 1;
+      onProgress(45 + (completedFrames / Math.max(1, framePaths.length)) * 30);
+      return candidate;
+    }
+  );
 
-  for (let index = 0; index < framePaths.length; index += 1) {
-    throwIfCancelled(options.signal);
-    const candidate = await analyzeFrame(framePaths[index], scoreDirectory, scores.length + 1, rasterLayout);
+  // Phase 2: 순차 중복 제거 (해시 비교만 수행 — 저렴)
+  const scores: AcceptedScore[] = [];
+  for (const candidate of candidates) {
     throwIfCancelled(options.signal);
     if (candidate && !scores.some((score) => isDuplicateScore(score, candidate))) {
       scores.push(candidate);
     } else if (candidate) {
       await rm(candidate.path, { force: true });
-      throwIfCancelled(options.signal);
     }
-    onProgress(45 + ((index + 1) / Math.max(1, framePaths.length)) * 30);
-    throwIfCancelled(options.signal);
   }
 
   if (scores.length === 0) {
     throw new ScorePipelineError("NO_SCORE_FOUND", "영상에서 오선 또는 TAB 악보를 찾지 못했습니다.");
   }
 
+  // Phase 3: 병렬 페이지 렌더링
   const pages = packScorePages(scores, rasterLayout);
-  const pagePaths: string[] = [];
-  for (let index = 0; index < pages.length; index += 1) {
+  const pagePaths = await Promise.all(pages.map(async (page, index) => {
     throwIfCancelled(options.signal);
     const pagePath = join(pageDirectory, `page-${String(index + 1).padStart(4, "0")}.png`);
-    await renderPage(pages[index], pagePath, rasterLayout);
-    throwIfCancelled(options.signal);
-    pagePaths.push(pagePath);
-  }
+    await renderPage(page, pagePath, rasterLayout);
+    return pagePath;
+  }));
   onProgress(88);
   throwIfCancelled(options.signal);
   await writePdf(pagePaths, outputPath, STANDALONE_SCORE_PDF, options.metadata, options.signal);
@@ -237,6 +248,27 @@ function throwIfCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new DOMException("The operation was aborted.", "AbortError");
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
 }
 
 export function roundCrop(crop: { x: number; y: number; width: number; height: number }, width: number, height: number) {
