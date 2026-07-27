@@ -3,13 +3,21 @@ import { z } from "zod";
 import { parseYouTubeVideoId } from "../src/shared/youtube";
 import type { ScoreJobService, StoredScoreJob } from "./score-job-service";
 
+const MAX_JOB_REQUEST_BYTES = 4 * 1024;
+const MAX_VIDEO_URL_LENGTH = 2 * 1024;
 const inputSchema = z.object({
   videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
-  videoUrl: z.string().url()
+  videoUrl: z.string().max(MAX_VIDEO_URL_LENGTH).url()
 }).strict();
 
 const INVALID_INPUT = {
   error: { code: "INVALID_YOUTUBE_URL", message: "YouTube 링크와 영상 ID가 일치하지 않습니다." }
+} as const;
+const UNSUPPORTED_MEDIA_TYPE = {
+  error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "JSON 요청만 허용됩니다." }
+} as const;
+const REQUEST_TOO_LARGE = {
+  error: { code: "REQUEST_TOO_LARGE", message: "요청 크기가 제한을 초과했습니다." }
 } as const;
 const JOB_NOT_FOUND = {
   error: { code: "JOB_NOT_FOUND", message: "작업이 중단되었거나 만료되었습니다." }
@@ -24,8 +32,14 @@ export function createScoreJobApp(service: ScoreJobService): Hono {
   app.get("/api/health", (context) => context.json({ status: "ok" }));
 
   app.post("/api/score-jobs", async (context) => {
-    const body = await context.req.json<unknown>().catch(() => null);
-    const parsed = inputSchema.safeParse(body);
+    if (!isJsonContentType(context.req.header("content-type"))) {
+      return context.json(UNSUPPORTED_MEDIA_TYPE, 415);
+    }
+    const body = await readBoundedJson(context.req.raw);
+    if (body.kind === "too-large") {
+      return context.json(REQUEST_TOO_LARGE, 413);
+    }
+    const parsed = inputSchema.safeParse(body.kind === "parsed" ? body.value : null);
     if (!parsed.success || parseYouTubeVideoId(parsed.data.videoUrl) !== parsed.data.videoId) {
       return context.json(INVALID_INPUT, 400);
     }
@@ -126,6 +140,48 @@ function toPublicJob(job: StoredScoreJob): object {
 
 function assertNever(value: never): never {
   throw new TypeError(`Unexpected variant: ${String(value)}`);
+}
+
+function isJsonContentType(contentType: string | undefined): boolean {
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
+type BoundedJson =
+  | { readonly kind: "parsed"; readonly value: unknown }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "too-large" };
+
+async function readBoundedJson(request: Request): Promise<BoundedJson> {
+  const declaredSize = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_JOB_REQUEST_BYTES) {
+    return { kind: "too-large" };
+  }
+  if (!request.body) {
+    return { kind: "invalid" };
+  }
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_JOB_REQUEST_BYTES) {
+        await reader.cancel();
+        return { kind: "too-large" };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return { kind: "parsed", value: JSON.parse(text) };
+  } catch {
+    return { kind: "invalid" };
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {

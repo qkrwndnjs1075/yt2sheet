@@ -16,8 +16,8 @@ export const STANDALONE_SCORE_PDF = {
   rasterHeight: 1700,
   pageWidth: 1200,
   pageHeight: 1700,
-  padding: 40,
-  gap: 16,
+  padding: 16,
+  gap: 12,
   targetDpi: 72
 } as const satisfies ScorePdfContract;
 
@@ -84,8 +84,8 @@ export const SCORE_IDENTITY_CONFIG = {
   page: {
     pageWidth: 1200,
     pageHeight: 1700,
-    padding: 40,
-    gap: 16
+    padding: 16,
+    gap: 12
   },
 
   debug: {

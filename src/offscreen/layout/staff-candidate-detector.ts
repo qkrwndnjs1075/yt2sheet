@@ -15,6 +15,7 @@ type CandidateDraft = StaffCandidate & {
 };
 
 const MIN_LINE_SCORE = 0.06;
+const DENSE_NOTATION_LINE_SCORE = 0.3;
 const MIN_LINE_WIDTH_RATIO = 0.12;
 
 export class StaffCandidateDetector {
@@ -30,7 +31,16 @@ export class StaffCandidateDetector {
     const rect = toAnalysisRect(frame, region.rect);
     const top = Math.max(0, Math.floor(rect.y));
     const bottom = Math.min(frame.height - 1, Math.ceil(rect.y + rect.height));
-    const peaks = this.findLinePeaks(frame, top, bottom);
+    const drafts = this.findCandidates(frame, this.findLinePeaks(frame, top, bottom, MIN_LINE_SCORE));
+
+    if (drafts.length > 0) {
+      return drafts;
+    }
+
+    return this.findCandidates(frame, this.findLinePeaks(frame, top, bottom, DENSE_NOTATION_LINE_SCORE));
+  }
+
+  private findCandidates(frame: PreprocessedFrame, peaks: LinePeak[]): CandidateDraft[] {
     const drafts: CandidateDraft[] = [];
 
     for (const lineCount of [6, 5] as const) {
@@ -47,7 +57,7 @@ export class StaffCandidateDetector {
     return drafts;
   }
 
-  private findLinePeaks(frame: PreprocessedFrame, top: number, bottom: number): LinePeak[] {
+  private findLinePeaks(frame: PreprocessedFrame, top: number, bottom: number, minimumScore: number): LinePeak[] {
     const peaks: LinePeak[] = [];
     let start: number | null = null;
     let strengthSum = 0;
@@ -56,7 +66,7 @@ export class StaffCandidateDetector {
     for (let y = top; y <= bottom; y += 1) {
       const score = frame.rowLineScores[y];
 
-      if (score >= MIN_LINE_SCORE) {
+      if (score >= minimumScore) {
         start ??= y;
         strengthSum += score;
         ySum += y * score;

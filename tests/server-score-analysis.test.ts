@@ -39,6 +39,31 @@ describe("server score analysis", () => {
     assert.equal(findScoreCrop(buildPreprocessedFrame({ id: "blank", width: 160, height: 100, grayscale })), null);
   });
 
+  it("finds a dense score system when notation joins the staff-line peak", () => {
+    const crop = findScoreCrop(denseScoreFrame());
+
+    assert.ok(crop);
+  });
+
+  it("finds a low-contrast staff system on a bright score panel", () => {
+    const crop = findScoreCrop(lowContrastScoreFrame());
+
+    assert.ok(crop);
+  });
+
+  it("keeps a paper-backed score when an unrelated component spans the frame edge", () => {
+    const width = 240;
+    const height = 240;
+    const grayscale = new Uint8Array(width * height).fill(255);
+    grayscale.fill(35, 0, width * 80);
+    for (let y = 80; y < height; y += 1) grayscale[y * width + 8] = 0;
+    for (let line = 0; line < 5; line += 1) grayscale.fill(0, (160 + line * 10) * width + 8, (160 + line * 10) * width + 232);
+
+    const crop = findScoreCrop(buildPreprocessedFrame({ id: "score-with-frame-spanning-component", width, height, grayscale }));
+
+    assert.ok(crop);
+  });
+
   it("stops a score crop at a dark piano boundary below the white score panel", () => {
     const width = 160;
     const height = 140;
@@ -250,6 +275,33 @@ function scoreFrameWithBottomText(): ReturnType<typeof buildPreprocessedFrame> {
     grayscale.fill(0, y * width + 120, y * width + 150);
   }
   return buildPreprocessedFrame({ id: "score-with-signature", width, height, grayscale });
+}
+
+function denseScoreFrame(): ReturnType<typeof buildPreprocessedFrame> {
+  const width = 240;
+  const height = 180;
+  const grayscale = new Uint8Array(width * height).fill(255);
+  for (let line = 0; line < 5; line += 1) {
+    const y = 60 + line * 10;
+    grayscale.fill(0, y * width + 8, y * width + 232);
+  }
+  for (let y = 60; y <= 100; y += 1) {
+    grayscale.fill(0, y * width + 108, y * width + 132);
+  }
+  return buildPreprocessedFrame({ id: "dense-score", width, height, grayscale });
+}
+
+function lowContrastScoreFrame(): ReturnType<typeof buildPreprocessedFrame> {
+  const width = 240;
+  const height = 180;
+  const grayscale = new Uint8Array(width * height).fill(245);
+  for (const top of [60, 110]) {
+    for (let line = 0; line < 5; line += 1) {
+      const y = top + line * 6;
+      grayscale.fill(210, y * width + 8, y * width + 232);
+    }
+  }
+  return buildPreprocessedFrame({ id: "low-contrast-score", width, height, grayscale });
 }
 
 function shiftedScoreFrame(id: string, top: number): ReturnType<typeof buildPreprocessedFrame> {

@@ -118,6 +118,20 @@ describe("score video processor", () => {
     assert.equal(result.scoreCount, 1);
   });
 
+  it("deduplicates the same notation when the playback overlay moves", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-playback-identity-");
+    const first = join(directory, "frame-1.png");
+    const second = join(directory, "frame-2.png");
+    await Promise.all([
+      writeScoreFrameWithPlaybackOverlay(first, 120),
+      writeScoreFrameWithPlaybackOverlay(second, 680)
+    ]);
+
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), pdfOptions());
+
+    assert.equal(result.scoreCount, 1);
+  });
+
   it("removes a wide colored keyboard below the score", async (t) => {
     // Given: a paper-bright keyboard band that spans almost the full frame width.
     const directory = await createTempDirectory(t, "yt2sheet-keyboard-");
@@ -264,6 +278,22 @@ async function writeScoreFrameWithPadding(path: string, top: number, includeHead
     <line x1="240" y1="${top + 120}" x2="240" y2="${top + 72}" stroke="black" stroke-width="5"/>
     <ellipse cx="610" cy="${top + 238}" rx="22" ry="14" fill="black"/>
     <line x1="630" y1="${top + 238}" x2="630" y2="${top + 190}" stroke="black" stroke-width="5"/>
+  </svg>`);
+  await sharp(svg).png().toFile(path);
+}
+
+async function writeScoreFrameWithPlaybackOverlay(path: string, overlayX: number): Promise<void> {
+  const lines = [90, 102, 114, 126, 138, 210, 222, 234, 246, 258]
+    .map((y) => `<line x1="40" y1="${y}" x2="920" y2="${y}" stroke="black" stroke-width="2"/>`)
+    .join("");
+  const svg = Buffer.from(`<svg width="960" height="360" xmlns="http://www.w3.org/2000/svg">
+    <rect width="960" height="360" fill="white"/>
+    ${lines}
+    <ellipse cx="220" cy="120" rx="22" ry="14" fill="black"/>
+    <line x1="240" y1="120" x2="240" y2="72" stroke="black" stroke-width="5"/>
+    <ellipse cx="610" cy="238" rx="22" ry="14" fill="black"/>
+    <line x1="630" y1="238" x2="630" y2="190" stroke="black" stroke-width="5"/>
+    <rect x="${overlayX}" y="0" width="32" height="360" fill="rgb(80, 0, 0)" fill-opacity="0.22"/>
   </svg>`);
   await sharp(svg).png().toFile(path);
 }

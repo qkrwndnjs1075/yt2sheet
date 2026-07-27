@@ -35,6 +35,63 @@ describe("YouTube score frame extraction", () => {
 });
 
 describe("YouTube score cancellation", () => {
+  it("retries one HTTP 403 download with the current YouTube player JavaScript", async (t) => {
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-403-");
+    const downloadArguments: (readonly string[])[] = [];
+    let downloadAttempts = 0;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "60";
+        if (executable === "yt-dlp-test") {
+          downloadArguments.push(args);
+          downloadAttempts += 1;
+          if (downloadAttempts === 1) {
+            throw new Error("yt-dlp failed: ERROR: unable to download video data: HTTP Error 403: Forbidden");
+          }
+          return args[args.indexOf("-o") + 1]?.replace("%(ext)s", "mp4") ?? "";
+        }
+        if (executable === "ffprobe-test") return "60";
+        return "";
+      },
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, outputPath) => {
+        await writeFile(outputPath, "%PDF-test");
+        return { pageCount: 1, scoreCount: 1 };
+      }
+    });
+
+    await processor.process(jobInput(), createContext(new AbortController().signal));
+
+    assert.equal(downloadArguments.length, 2);
+    assert.equal(downloadArguments[0]?.includes("--extractor-args"), false);
+    const playerArgumentIndex = downloadArguments[1]?.indexOf("--extractor-args") ?? -1;
+    assert.equal(downloadArguments[1]?.[playerArgumentIndex + 1], "youtube:player_js_version=actual");
+  });
+
+  it("does not retry a non-403 downloader failure", async (t) => {
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-download-error-");
+    let downloadAttempts = 0;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "60";
+        if (executable === "yt-dlp-test") {
+          downloadAttempts += 1;
+          throw new Error("yt-dlp failed: network unavailable");
+        }
+        return "";
+      }
+    });
+
+    await assert.rejects(processor.process(jobInput(), createContext(new AbortController().signal)), {
+      code: "MEDIA_PROCESSING_FAILED"
+    });
+    assert.equal(downloadAttempts, 1);
+  });
+
   it("passes injected creation time into a retained owned result", async (t) => {
     // Given: deterministic media stages, clock, and PDF writer.
     const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-success-");

@@ -26,7 +26,9 @@ export type ScoreCrop = Rect & {
   readonly staffGap: number;
 };
 
-const SIMPLE_THRESHOLD = 180;
+const DEFAULT_THRESHOLD = 180;
+const MIN_ADAPTIVE_THRESHOLD = 90;
+const MAX_ADAPTIVE_THRESHOLD = 235;
 const TOP_MARGIN_GAPS = 12;
 const BOTTOM_MARGIN_GAPS = 2;
 const MIN_CONTENT_RATIO = 0.002;
@@ -92,11 +94,13 @@ export function findScoreCrop(frame: PreprocessedFrame): ScoreCrop | null {
   if (paperBackedStaffs.length === 0) {
     return null;
   }
+  const firstPaperBackedStaffTop = Math.min(...paperBackedStaffs.map((staff) => staff.rect.y));
   const wideComponents = findWideComponents(frame);
   const bottomBoundary = wideComponents
     .filter((component) => component.bottom >= frame.height - 1
       && component.height >= frame.height * 0.08
-      && component.density >= 0.2)
+      && component.density >= 0.2
+      && component.top > firstPaperBackedStaffTop)
     .reduce<number | null>((boundary, component) => boundary === null ? component.top : Math.min(boundary, component.top), null);
   const detectedStaffs = bottomBoundary === null
     ? paperBackedStaffs
@@ -258,6 +262,6 @@ function estimateThreshold(grayscale: Uint8Array): number {
     total += grayscale[index];
     samples += 1;
   }
-  const mean = samples === 0 ? SIMPLE_THRESHOLD : total / samples;
-  return Math.max(90, Math.min(SIMPLE_THRESHOLD, mean - 18));
+  const mean = samples === 0 ? DEFAULT_THRESHOLD : total / samples;
+  return Math.max(MIN_ADAPTIVE_THRESHOLD, Math.min(MAX_ADAPTIVE_THRESHOLD, mean - 18));
 }

@@ -7,6 +7,18 @@ const PAPER_CHROMA_MAX = 12;
 const PHOTO_COMPONENT_RATIO = 0.003;
 const PHOTO_COLOR_PIXELS_MIN = 64;
 const PHOTO_BOUNDS_PADDING_RATIO = 0.12;
+const NOTATION_IDENTITY_WIDTH = 96;
+const NOTATION_IDENTITY_HEIGHT = 48;
+const NOTATION_INK_THRESHOLD = 180;
+const STAFF_ROW_INK_RATIO = 0.45;
+const MAX_NOTATION_TRANSLATION = 2;
+const MIN_NOTATION_OVERLAP = 0.6;
+
+export type NotationIdentity = {
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint8Array;
+};
 
 export async function normalizeScoreImage(image: Buffer, verticalPadding = 0): Promise<Buffer> {
   const raw = await sharp(image).toColourspace("srgb").removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -57,6 +69,58 @@ export async function createDominantInkHash(image: Buffer): Promise<Uint8Array> 
   const bounds = findDominantInkBounds(raw.data, raw.info.width, raw.info.height);
   const dominantInk = await sharp(image).extract(bounds).png().toBuffer();
   return createDifferenceHash(dominantInk);
+}
+
+export async function createNotationIdentity(image: Buffer): Promise<NotationIdentity> {
+  const raw = await sharp(image).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const staffRows = findStaffRows(raw.data, raw.info.width, raw.info.height);
+  const pixels = new Uint8Array(NOTATION_IDENTITY_WIDTH * NOTATION_IDENTITY_HEIGHT);
+
+  for (let targetY = 0; targetY < NOTATION_IDENTITY_HEIGHT; targetY += 1) {
+    const top = Math.floor(targetY * raw.info.height / NOTATION_IDENTITY_HEIGHT);
+    const bottom = Math.max(top + 1, Math.floor((targetY + 1) * raw.info.height / NOTATION_IDENTITY_HEIGHT));
+    for (let targetX = 0; targetX < NOTATION_IDENTITY_WIDTH; targetX += 1) {
+      const left = Math.floor(targetX * raw.info.width / NOTATION_IDENTITY_WIDTH);
+      const right = Math.max(left + 1, Math.floor((targetX + 1) * raw.info.width / NOTATION_IDENTITY_WIDTH));
+      for (let y = top; y < bottom && pixels[targetY * NOTATION_IDENTITY_WIDTH + targetX] === 0; y += 1) {
+        if (staffRows[y] === 1) continue;
+        for (let x = left; x < right; x += 1) {
+          if (raw.data[y * raw.info.width + x] < NOTATION_INK_THRESHOLD) {
+            pixels[targetY * NOTATION_IDENTITY_WIDTH + targetX] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return { width: NOTATION_IDENTITY_WIDTH, height: NOTATION_IDENTITY_HEIGHT, pixels };
+}
+
+export function hasStrongNotationOverlap(left: NotationIdentity, right: NotationIdentity): boolean {
+  if (left.width !== right.width || left.height !== right.height) return false;
+  for (let offsetY = -MAX_NOTATION_TRANSLATION; offsetY <= MAX_NOTATION_TRANSLATION; offsetY += 1) {
+    const leftTop = Math.max(0, offsetY);
+    const leftBottom = Math.min(left.height, left.height + offsetY);
+    const rightTop = Math.max(0, -offsetY);
+    for (let offsetX = -MAX_NOTATION_TRANSLATION; offsetX <= MAX_NOTATION_TRANSLATION; offsetX += 1) {
+      const leftStart = Math.max(0, offsetX);
+      const leftEnd = Math.min(left.width, left.width + offsetX);
+      const rightStart = Math.max(0, -offsetX);
+      let sharedInk = 0;
+      let combinedInk = 0;
+      for (let leftY = leftTop, rightY = rightTop; leftY < leftBottom; leftY += 1, rightY += 1) {
+        for (let leftX = leftStart, rightX = rightStart; leftX < leftEnd; leftX += 1, rightX += 1) {
+          const leftInk = left.pixels[leftY * left.width + leftX];
+          const rightInk = right.pixels[rightY * right.width + rightX];
+          if (leftInk === 1 || rightInk === 1) combinedInk += 1;
+          if (leftInk === 1 && rightInk === 1) sharedInk += 1;
+        }
+      }
+      if (combinedInk > 0 && sharedInk / combinedInk >= MIN_NOTATION_OVERLAP) return true;
+    }
+  }
+  return false;
 }
 
 function removePhotographicComponents(
@@ -138,6 +202,21 @@ function isColored(data: Buffer, pixel: number, channels: number): boolean {
   const green = data[offset + 1];
   const blue = data[offset + 2];
   return Math.max(red, green, blue) - Math.min(red, green, blue) > PAPER_CHROMA_MAX;
+}
+
+function findStaffRows(data: Buffer, width: number, height: number): Uint8Array {
+  const rows = new Uint8Array(height);
+  for (let y = 0; y < height; y += 1) {
+    let ink = 0;
+    for (let x = 0; x < width; x += 1) {
+      if (data[y * width + x] < NOTATION_INK_THRESHOLD) ink += 1;
+    }
+    if (ink < width * STAFF_ROW_INK_RATIO) continue;
+    rows[Math.max(0, y - 1)] = 1;
+    rows[y] = 1;
+    rows[Math.min(height - 1, y + 1)] = 1;
+  }
+  return rows;
 }
 
 function findVerticalInkBounds(

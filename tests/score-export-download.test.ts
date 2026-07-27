@@ -154,7 +154,7 @@ test("download filename sanitizer removes browser-invalid filename characters", 
   assert.equal(safeFileBaseName("   "), "score-export");
 });
 
-test("score page layout keeps a fixed system gap and balances outer whitespace", () => {
+test("score page layout keeps a fixed system gap and aligns to top", () => {
   // Given: two compact scores that leave unused space after fitting to the printable width.
   const imageSizes = [
     { width: 1600, height: 180 },
@@ -164,20 +164,16 @@ test("score page layout keeps a fixed system gap and balances outer whitespace",
   // When: placements are computed for one PDF page.
   const placements = computeScorePagePlacements(imageSizes);
 
-  // Then: unused height stays outside the score group and the configured gap remains fixed.
+  // Then: scores start at the top padding and the configured gap remains fixed.
   const first = placements[0];
   const last = placements[placements.length - 1];
   const actualGap = placements[1].y - (placements[0].y + placements[0].height);
-  const topWhitespace = first.y - SCORE_IDENTITY_CONFIG.page.padding;
-  const bottomWhitespace = SCORE_IDENTITY_CONFIG.page.pageHeight
-    - SCORE_IDENTITY_CONFIG.page.padding
-    - (last.y + last.height);
 
   assert.ok(first);
   assert.ok(last);
-  assert.equal(SCORE_IDENTITY_CONFIG.page.gap, 16);
-  assert.equal(Math.round(actualGap), 16);
-  assert.ok(Math.abs(topWhitespace - bottomWhitespace) < 1);
+  assert.equal(SCORE_IDENTITY_CONFIG.page.gap, 12);
+  assert.equal(Math.round(actualGap), 12);
+  assert.equal(first.y, SCORE_IDENTITY_CONFIG.page.padding);
   assert.equal(first.width / first.height, 1600 / 180);
   assert.equal(last.width / last.height, 1600 / 180);
 });
@@ -190,7 +186,7 @@ test("score page layout keeps an extremely tall score inside printable bounds", 
   const bottom = (placement?.y ?? 0) + (placement?.height ?? 0);
 
   // Then: the score does not extend below the printable page boundary.
-  assert.ok(bottom <= SCORE_IDENTITY_CONFIG.page.pageHeight - SCORE_IDENTITY_CONFIG.page.padding);
+  assert.ok(bottom <= SCORE_IDENTITY_CONFIG.page.pageHeight - SCORE_IDENTITY_CONFIG.page.padding + 0.001);
 });
 
 function score(clusterId: string, firstSeenSec: number, order: number, dataUrl = IMAGE_DATA_URL): DebugUniqueScore {

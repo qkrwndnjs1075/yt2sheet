@@ -10,18 +10,29 @@ import {
   type ScorePdfContract
 } from "../src/shared/score-identity-config";
 import { buildPreprocessedFrame, findScoreCrop, hammingDistance, isNearDuplicate } from "./score-analysis";
-import { createDifferenceHash, createDominantInkHash, normalizeScoreImage } from "./score-image-normalizer";
+import {
+  createDifferenceHash,
+  createDominantInkHash,
+  createNotationIdentity,
+  hasStrongNotationOverlap,
+  normalizeScoreImage,
+  type NotationIdentity
+} from "./score-image-normalizer";
 import { ScorePipelineError } from "./score-job-service";
 
 type AcceptedScore = {
   readonly path: string;
   readonly hash: Uint8Array;
   readonly dominantHash: Uint8Array;
+  readonly notationIdentity: NotationIdentity;
+  readonly staffGap: number;
   readonly image: { readonly width: number; readonly height: number };
 };
 
 const ANALYSIS_WIDTH = 1_280;
 const DOMINANT_DUPLICATE_DISTANCE = 8;
+const NOTATION_IDENTITY_CANDIDATE_DISTANCE = 34;
+const MAX_NOTATION_IDENTITY_STAFF_GAP_DELTA = 0.08;
 
 export type ScorePdfResult = {
   readonly pageCount: number;
@@ -135,16 +146,34 @@ async function analyzeFrame(
   if (!metadata.width || !metadata.height) {
     return null;
   }
-  const hash = await createDifferenceHash(normalized);
-  const dominantHash = await createDominantInkHash(normalized);
+  const [hash, dominantHash, notationIdentity] = await Promise.all([
+    createDifferenceHash(normalized),
+    createDominantInkHash(normalized),
+    createNotationIdentity(normalized)
+  ]);
   const outputPath = join(outputDirectory, `score-${String(outputIndex).padStart(4, "0")}.png`);
   await writeFile(outputPath, normalized);
-  return { path: outputPath, hash, dominantHash, image: { width: metadata.width, height: metadata.height } };
+  return {
+    path: outputPath,
+    hash,
+    dominantHash,
+    notationIdentity,
+    staffGap: crop.staffGap,
+    image: { width: metadata.width, height: metadata.height }
+  };
 }
 
 function isDuplicateScore(left: AcceptedScore, right: AcceptedScore): boolean {
+  const differenceDistance = hammingDistance(left.hash, right.hash);
   return isNearDuplicate(left.hash, right.hash)
-    || hammingDistance(left.dominantHash, right.dominantHash) <= DOMINANT_DUPLICATE_DISTANCE;
+    || hammingDistance(left.dominantHash, right.dominantHash) <= DOMINANT_DUPLICATE_DISTANCE
+    || (differenceDistance <= NOTATION_IDENTITY_CANDIDATE_DISTANCE
+      && hasSimilarStaffGap(left.staffGap, right.staffGap)
+      && hasStrongNotationOverlap(left.notationIdentity, right.notationIdentity));
+}
+
+function hasSimilarStaffGap(left: number, right: number): boolean {
+  return Math.abs(left - right) / Math.max(left, right) <= MAX_NOTATION_IDENTITY_STAFF_GAP_DELTA;
 }
 
 async function renderPage(scores: readonly AcceptedScore[], outputPath: string, layout: ScorePdfPageLayout): Promise<void> {

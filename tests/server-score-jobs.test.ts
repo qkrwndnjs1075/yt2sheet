@@ -68,6 +68,43 @@ describe("score job API", () => {
     });
   });
 
+  it("rejects non-JSON and oversized job requests before processor admission", async () => {
+    let processorStarts = 0;
+    const service = new ScoreJobService({
+      process: async () => {
+        processorStarts += 1;
+        return { filePath: "unused.pdf", pageCount: 1 };
+      }
+    }, { createId: () => "job-rejected" });
+    const app = createScoreJobApp(service);
+
+    const nonJson = await app.request("http://localhost/api/score-jobs", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify(jobInput("abcdefghijk"))
+    });
+    assert.equal(nonJson.status, 415);
+    assert.deepEqual(await nonJson.json(), {
+      error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "JSON 요청만 허용됩니다." }
+    });
+
+    const oversized = await app.request("http://localhost/api/score-jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...jobInput("abcdefghijk"),
+        videoUrl: `https://www.youtube.com/watch?v=abcdefghijk&padding=${"a".repeat(5_000)}`
+      })
+    });
+    assert.equal(oversized.status, 413);
+    assert.deepEqual(await oversized.json(), {
+      error: { code: "REQUEST_TOO_LARGE", message: "요청 크기가 제한을 초과했습니다." }
+    });
+
+    await nextTurn();
+    assert.equal(processorStarts, 0);
+  });
+
   it("queues a valid job, publishes success, and serves only its result file", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "yt2sheet-api-"));
     t.after(() => rm(directory, { recursive: true, force: true }));

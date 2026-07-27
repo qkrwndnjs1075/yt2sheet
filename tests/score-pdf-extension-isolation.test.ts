@@ -14,8 +14,8 @@ import { ScorePageChunker } from "../src/offscreen/export/score-page-chunker.js"
 const LEGACY_PAGE = {
   pageWidth: 1200,
   pageHeight: 1700,
-  padding: 40,
-  gap: 16
+  padding: 16,
+  gap: 12
 };
 
 const CUSTOM_LAYOUT = {
@@ -39,8 +39,8 @@ test("standalone PDF publishes one exact geometry and metadata policy", () => {
     rasterHeight: 1700,
     pageWidth: 1200,
     pageHeight: 1700,
-    padding: 40,
-    gap: 16,
+    padding: 16,
+    gap: 12,
     targetDpi: 72
   });
   assert.deepEqual(metadata, {
@@ -109,8 +109,8 @@ test("extension isolation fails against a temporary copied module with changed l
     const mutatedConfig = readFileSync(configPath, "utf8")
       .replaceAll("pageWidth: 1200", "pageWidth: 2480")
       .replaceAll("pageHeight: 1700", "pageHeight: 3508")
-      .replaceAll("padding: 40", "padding: 83")
-      .replaceAll("gap: 16", "gap: 33");
+      .replaceAll("padding: 16", "padding: 83")
+      .replaceAll("gap: 12", "gap: 33");
     writeFileSync(configPath, mutatedConfig, "utf8");
 
     // When: the extension isolation assertion runs against that copied module variant.

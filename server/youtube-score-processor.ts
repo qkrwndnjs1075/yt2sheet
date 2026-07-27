@@ -51,7 +51,7 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       throwIfCancelled(signal);
       onProgress(12);
       throwIfCancelled(signal);
-      const videoPath = await this.downloadVideo(input.videoUrl, workDirectory, signal);
+      const videoPath = await this.downloadVideo(input.videoId, input.videoUrl, workDirectory, signal);
       throwIfCancelled(signal);
       onProgress(32);
       throwIfCancelled(signal);
@@ -97,8 +97,18 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     return duration;
   }
 
-  private async downloadVideo(videoUrl: string, workDirectory: string, signal: AbortSignal): Promise<string> {
-    const output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg), { signal });
+  private async downloadVideo(videoId: string, videoUrl: string, workDirectory: string, signal: AbortSignal): Promise<string> {
+    let output: string;
+    try {
+      output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg), { signal });
+    } catch (error) {
+      if (!isYouTubeDownloadForbidden(error)) throw error;
+      logger.warn({ videoId }, "retrying YouTube download with current player JavaScript");
+      output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg, {
+        useCurrentPlayerJavaScript: true,
+        restartDownload: true
+      }), { signal });
+    }
     const reportedPath = output.trim().split(/\r?\n/).filter(Boolean).at(-1);
     if (!reportedPath) {
       throw new ScorePipelineError("DOWNLOAD_FAILED", "YouTube 영상을 다운로드하지 못했습니다.");
@@ -136,17 +146,33 @@ function throwIfCancelled(signal: AbortSignal): void {
   }
 }
 
-export function buildVideoDownloadArguments(videoUrl: string, workDirectory: string, ffmpegPath: string): string[] {
+type VideoDownloadOptions = {
+  readonly useCurrentPlayerJavaScript?: boolean;
+  readonly restartDownload?: boolean;
+};
+
+export function buildVideoDownloadArguments(
+  videoUrl: string,
+  workDirectory: string,
+  ffmpegPath: string,
+  options: VideoDownloadOptions = {}
+): string[] {
   const ffmpegLocation = isAbsolute(ffmpegPath) || ffmpegPath.includes("/") || ffmpegPath.includes("\\")
     ? ["--ffmpeg-location", ffmpegPath]
     : [];
   return [
     "--no-playlist", "--no-progress", "--max-filesize", "2G",
     "-f", "bv*[height<=1080]+ba/b[height<=1080]/best",
+    ...(options.useCurrentPlayerJavaScript ? ["--extractor-args", "youtube:player_js_version=actual"] : []),
+    ...(options.restartDownload ? ["--no-continue"] : []),
     ...ffmpegLocation,
     "--merge-output-format", "mp4", "-o", join(workDirectory, "source.%(ext)s"),
     "--print", "after_move:filepath", videoUrl
   ];
+}
+
+function isYouTubeDownloadForbidden(error: unknown): boolean {
+  return error instanceof Error && /HTTP Error 403: Forbidden/i.test(error.message);
 }
 
 export function buildFrameExtractionArguments(videoPath: string, frameDirectory: string, duration: number): string[] {

@@ -67,7 +67,7 @@ export function computeScorePagePlacements(imageSizes: ScoreImageSize[], layout:
   const groupHeight = renderedHeight + totalGap;
 
   const placements: ScoreImagePlacement[] = [];
-  let y = padding + Math.max(0, (contentHeight - groupHeight) / 2);
+  let y = padding;
 
   for (const size of widthFit) {
     const width = size.width * compression;

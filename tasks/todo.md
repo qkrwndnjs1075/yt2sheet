@@ -1116,3 +1116,83 @@
 ## Review
 
 - Placeholder for caller review; execution evidence is recorded under the active attempt baseline directory.
+
+# G049 GqPLC0J4cKs Missing Standalone Score Sheet
+
+## Plan
+
+- [x] Capture the exact video through the existing local API and classify every sampled frame as rejected, accepted, or duplicate with stable runtime metrics.
+- [x] Confirm whether a shared omission boundary exists before changing production code.
+- [x] Reprocess the exact URL through the API and inspect its nonvisual PDF structure. Do not run Visual QA or use subagents.
+
+## Review
+
+- The existing local API completed the exact URL twice with 18 scores across 3 pages; the downloaded PDF is 1,649,139 bytes, valid `%PDF-1.7`, and has 3 PDF pages.
+- The source has 585 half-second samples. 139 frames had no staff candidate, and the remaining 446 frames form exactly 18 accepted consecutive score ranges plus 428 duplicates. Every duplicate lies within its own accepted range; no later different score was merged into an earlier one.
+- The no-staff spans are 87-98.5s, 165-176.5s, 189-200.5s, and 247-276.5s; no rejected frame there contains a raw staff candidate. The only paper rejection is the final fade at 289.5s.
+- `packScorePages` appends every accepted score to exactly one page and the exact job reported 18 accepted scores, so the server did not discard an accepted sheet during PDF composition.
+- No product code or test was changed because the supplied URL did not exhibit a false duplicate, crop rejection, or layout drop in the current local pipeline. A timestamp or expected sequence position is needed to identify the different missing sheet without visual QA.
+
+# G050 Verify Missing 23rd Score In Supplied GqPLC0J4cKs PDF
+
+## Plan
+
+- [x] Render and inspect the supplied PDF's score systems in sequential notation order, locating the missing 23rd position.
+- [x] Map the missing notation state to its source-video frames, add a failing regression, and apply the smallest server-side preservation fix.
+- [x] Regenerate the exact URL and verify the ordered score sequence plus automated project checks; do not invoke the Visual QA workflow or subagents.
+
+## Review
+
+- The supplied PDF's second page jumps from measure 19 directly to measure 26; measures 23 through 25 are absent.
+- The source frame at roughly 87 seconds begins at measure 23, but the low-threshold row-line peak merged dense notation with the five staff lines and produced no staff candidate.
+- `StaffCandidateDetector` now preserves the original low-threshold behavior and retries with a dense-notation threshold only when that first pass produces no candidate. The focused regression was red before the fix and green after it; the smaller YouTube tab capture regression remains covered.
+- The exact local API job `c5237534-de19-4498-a373-0c234d4b672a` produced a four-page PDF. Its second rendered page is ordered 19, 23, 26, so the missing system is restored.
+- `npm run verify` passed: typecheck, 291 tests, standalone web build, and extension build. The Visual QA workflow and subagents were not used, per request.
+
+# G051 Harden Standalone Score Generation Across Score Styles
+
+## Plan
+
+- [x] Reproduce the supplied `eKz46zfMMT8` job through the active API and capture the exact failure stage plus generated artifact state.
+- [x] Trace the shared extraction, crop, normalization, deduplication, and PDF boundaries; add a failing regression for the confirmed general cause.
+- [x] Implement the smallest generalizable correction and verify the supplied URL plus the existing representative score-processing suite and full project gate. Do not invoke Visual QA or subagents.
+
+## Review
+
+- The active API initially returned `NO_SCORE_FOUND` for `eKz46zfMMT8`; video acquisition and frame extraction succeeded.
+- A TAB over an on-camera performance contained a dense, frame-spanning dark component from row zero through the lower screen edge. The cropper mistook it for a piano boundary and removed all otherwise paper-backed staff candidates.
+- The boundary now applies only to components that begin below the first paper-backed staff. A new regression fails without that condition and passes with it, while the existing dark-piano, white-key-piano, dense-notation, standard-staff, and TAB checks remain green.
+- The exact local API job `a8816604-287b-49c7-957b-1397221576b1` now produced a parseable three-page, 1,224,224-byte PDF; its first page contains the expected staff notation and TAB.
+- `npm run verify` passed: typecheck, 292 tests, standalone web build, and extension build. The Visual QA workflow and subagents were not used.
+
+# G052 Detection and Processing Boundary Hardening
+
+## Plan
+
+- [x] Define supported visible-score detection boundaries, reproduce the low-contrast and request-boundary failures with focused RED tests, and preserve the existing staff/TAB/piano regressions.
+- [x] Add adaptive bright-panel detection, strict job-request guards, and a narrow YouTube 403 media fallback without broadening the media-processing trust boundary.
+- [x] Re-run the two reported YouTube jobs through the active API, inspect PDF structure, run the full verification gate, and clean only G052 diagnostic artifacts. Do not invoke Visual QA or use subagents.
+
+## Review
+
+- A bright 245-gray paper panel with 210-gray staff ink reproduced a real detection blind spot: the previous adaptive threshold could never rise above 180. The threshold now remains relative to sampled luminance up to 235, while the existing paper, regularity, and piano-boundary classifiers remain the acceptance safeguards.
+- The request endpoint now accepts only `application/json`, streams at most 4 KiB before parsing, and caps the URL field at 2 KiB. RED cases showed `text/plain` was previously admitted as a 202 job and an oversized request had no dedicated boundary; GREEN coverage proves both are rejected before processor admission.
+- The supplied `eKz46zfMMT8` retry first exposed a separate downloader boundary: `yt-dlp` returned HTTP 403 while media download began. The processor retries exactly that 403 once with `youtube:player_js_version=actual` and a clean restart; non-403 download errors remain one-attempt failures.
+- Active HTTP jobs: `GqPLC0J4cKs` job `604857c9-7db9-4d3b-b0dd-5f905fd115b8` succeeded with a four-page 1200x1700 PDF; `eKz46zfMMT8` job `f0a73ac6-5cc7-4628-8383-a14a3a816984` succeeded after the controlled 403 retry with a three-page 1200x1700 PDF. Streaming `pdfinfo` and `pdfimages -list` confirmed valid PDF 1.7 structure and one embedded rendered page image per page without retaining debug PDF files.
+- Final verification: `npm run verify` passed typecheck, all 296 tests, standalone web build, and extension build. Changed-file LSP diagnostics are clean. Visual QA and subagents were not used, per request.
+
+# G053 Repeated Score Sheets In eKz46zfMMT8 PDF
+
+## Plan
+
+- [x] Inspect the supplied PDF in page and score-system order, quantify repeated notation states, and trace its actual accepted-score source boundary without Visual QA or subagents.
+- [x] Add a failing regression for the confirmed repeat mechanism and make the smallest shared standalone-pipeline correction.
+- [x] Regenerate the exact URL through the active API, compare repeated-score metrics against the supplied PDF, run full verification, and remove only G053 diagnostic artifacts.
+
+## Review
+
+- Root cause: the global duplicate set only compared full-frame and dominant-component 128-bit hashes. A moving playback overlay changed both enough for the same notation to be accepted again; `eKz46zfMMT8` therefore produced 14 score systems from 305 two-fps frames.
+- Fix: keep the existing hashes as fast first-pass checks, then use a staff-line-suppressed 96x48 notation identity only for near-hash candidates. It requires at least 60% aligned notation overlap and staff-gap agreement within 8%, so differently spaced or genuinely changed score systems remain separate.
+- Regression: the new moving-playback-overlay fixture failed RED at two accepted scores and passes GREEN at one. The established unequal-staff-gap PDF regression still keeps three distinct score sheets.
+- Exact active-backend proof: job `35a33bf0-f3e4-4762-8f12-de1bb8bb3d60` succeeded through port 4174 with three 1200x1700 pages and 13 score systems (5+5+3); the maximum remaining notation overlap is 40.02%, below the 60% duplicate threshold. No Visual QA or subagents were used.
+- Final verification: `npm run verify` passed typecheck, 297/297 tests, standalone-web build, and extension build; `git diff --check` and changed-file LSP diagnostics are clean.

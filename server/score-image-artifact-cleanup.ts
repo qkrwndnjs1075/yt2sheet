@@ -4,11 +4,16 @@ const STAFF_ROW_MIN_RATIO = 0.35;
 const STAFF_CONTEXT_GAP_MULTIPLIER = 3;
 const STAFF_CONTEXT_SLICES = 8;
 const EDGE_MAX_WIDTH_RATIO = 0.02;
+const TOP_RIGHT_LOGO_MIN_X_RATIO = 0.9;
+const TOP_RIGHT_LOGO_MAX_Y_RATIO = 0.35;
+const TOP_RIGHT_LOGO_MAX_WIDTH_RATIO = 0.18;
+const TOP_RIGHT_LOGO_MAX_HEIGHT_RATIO = 0.22;
 
 type RawImageInfo = { readonly width: number; readonly height: number; readonly channels: number };
 
 export function cleanScoreImageArtifacts(data: Buffer, info: RawImageInfo): void {
   whitenNarrowEdgeComponents(data, info);
+  whitenDetachedTopRightLogo(data, info);
   whitenDetachedBottomInk(data, info);
 }
 
@@ -117,6 +122,66 @@ function whitenDetachedBottomInk(data: Buffer, info: RawImageInfo): void {
         data.fill(255, (eraseRow * info.width + left) * info.channels, (eraseRow * info.width + right) * info.channels);
       }
       break;
+    }
+  }
+}
+
+function whitenDetachedTopRightLogo(data: Buffer, info: RawImageInfo): void {
+  const minXThreshold = Math.floor(info.width * TOP_RIGHT_LOGO_MIN_X_RATIO);
+  const maxYThreshold = Math.floor(info.height * TOP_RIGHT_LOGO_MAX_Y_RATIO);
+  const maxComponentWidth = Math.max(1, Math.floor(info.width * TOP_RIGHT_LOGO_MAX_WIDTH_RATIO));
+  const maxComponentHeight = Math.max(1, Math.floor(info.height * TOP_RIGHT_LOGO_MAX_HEIGHT_RATIO));
+  const pixelCount = info.width * info.height;
+  const visited = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+
+  for (let start = 0; start < pixelCount; start += 1) {
+    if (visited[start] === 1 || !isForeground(data, start, info.channels)) {
+      continue;
+    }
+    let head = 0;
+    let tail = 1;
+    let minX = start % info.width;
+    let maxX = minX;
+    let minY = Math.floor(start / info.width);
+    let maxY = minY;
+    queue[0] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const pixel = queue[head];
+      head += 1;
+      const pixelX = pixel % info.width;
+      const pixelY = Math.floor(pixel / info.width);
+      minX = Math.min(minX, pixelX);
+      maxX = Math.max(maxX, pixelX);
+      minY = Math.min(minY, pixelY);
+      maxY = Math.max(maxY, pixelY);
+      for (const neighbor of [
+        pixelX > 0 ? pixel - 1 : -1,
+        pixelX + 1 < info.width ? pixel + 1 : -1,
+        pixelY > 0 ? pixel - info.width : -1,
+        pixelY + 1 < info.height ? pixel + info.width : -1
+      ]) {
+        if (neighbor >= 0 && visited[neighbor] === 0 && isForeground(data, neighbor, info.channels)) {
+          visited[neighbor] = 1;
+          queue[tail] = neighbor;
+          tail += 1;
+        }
+      }
+    }
+    if (
+      minX < minXThreshold ||
+      minY > maxYThreshold ||
+      maxX - minX + 1 > maxComponentWidth ||
+      maxY - minY + 1 > maxComponentHeight
+    ) {
+      continue;
+    }
+    for (let index = 0; index < tail; index += 1) {
+      const offset = queue[index] * info.channels;
+      data[offset] = 255;
+      data[offset + 1] = 255;
+      data[offset + 2] = 255;
     }
   }
 }

@@ -65,6 +65,21 @@ describe("score image normalizer", () => {
     assert.ok(Math.min(...(await rgbAt(normalized, 100, 120))) < 250);
     assert.ok(Math.min(...(await rgbAt(normalized, 480, 140))) < 250);
   });
+
+  it("removes a top-right publisher logo while preserving chord names and tempo marks", async () => {
+    // Given: a grand staff with tempo/chord text plus an isolated publisher logo pinned to the top-right corner.
+    const image = await scoreWithTopRightLogo();
+
+    // When: the standalone server normalizes the score for PDF output.
+    const normalized = await normalizeScoreImage(image);
+
+    // Then: the corner logo is erased while tempo, left/center/right chord names, and the staff survive.
+    assert.equal(await darkPixelsIn(normalized, { left: 865, top: 15, width: 95, height: 55 }), 0);
+    assert.ok(await darkPixelsIn(normalized, { left: 80, top: 55, width: 230, height: 50 }) > 100);
+    assert.ok(await darkPixelsIn(normalized, { left: 295, top: 78, width: 80, height: 30 }) > 10);
+    assert.ok(await darkPixelsIn(normalized, { left: 755, top: 78, width: 80, height: 30 }) > 10);
+    assert.ok(await darkPixelsIn(normalized, { left: 40, top: 115, width: 880, height: 150 }) > 5_000);
+  });
 });
 
 async function scoreWithDetachedCaption(includeLowerTail = false): Promise<Buffer> {
@@ -105,6 +120,22 @@ async function scoreWithShortEdgeFragment(): Promise<Buffer> {
     ${staffLines}
     <line x1="480" y1="120" x2="480" y2="168" stroke="black" stroke-width="4"/>
     <rect x="959" y="76" width="1" height="9" fill="black"/>
+  </svg>`);
+  return sharp(svg).png().toBuffer();
+}
+
+async function scoreWithTopRightLogo(): Promise<Buffer> {
+  const staffLines = [120, 132, 144, 156, 168, 210, 222, 234, 246, 258]
+    .map((y) => `<line x1="40" y1="${y}" x2="920" y2="${y}" stroke="black" stroke-width="2"/>`)
+    .join("");
+  const svg = Buffer.from(`<svg width="960" height="420" xmlns="http://www.w3.org/2000/svg">
+    <rect width="960" height="420" fill="white"/>
+    <text x="80" y="96" font-size="28">tempo rubato</text>
+    <text x="300" y="100" font-size="24">Cm9</text>
+    <text x="760" y="100" font-size="24">Dm/F</text>
+    ${staffLines}
+    <text x="872" y="40" font-size="24" font-family="cursive">PianoinU</text>
+    <text x="872" y="58" font-size="10">PREMIUM SCORE</text>
   </svg>`);
   return sharp(svg).png().toBuffer();
 }
