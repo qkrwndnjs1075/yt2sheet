@@ -56,7 +56,7 @@ try {
 
   Write-InstallStep "SHA-256 검증 중"
   $checksumLine = Get-Content -LiteralPath $checksumsPath | Where-Object {
-    $_ -match "^\s*[0-9a-fA-F]{64}\s+\*?$([regex]::Escape($assetName))\s*$"
+    $_ -match "^\s*[0-9a-fA-F]{64}\s+\*?(?:release-assets/)?$([regex]::Escape($assetName))\s*$"
   } | Select-Object -First 1
   if ([string]::IsNullOrWhiteSpace($checksumLine)) {
     throw "checksums.txt에서 $assetName 항목을 찾지 못했습니다."

@@ -64,7 +64,7 @@ install_step "무결성 파일 다운로드 중"
 download "$base_url/checksums.txt" "$checksums_path"
 
 install_step "SHA-256 검증 중"
-expected_hash="$(awk -v name="$asset_name" '$2 == name { print $1; exit }' "$checksums_path")"
+expected_hash="$(awk -v name="$asset_name" '$2 == name || $2 == "release-assets/" name { print $1; exit }' "$checksums_path")"
 case "$expected_hash" in
   [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*)
     ;;
