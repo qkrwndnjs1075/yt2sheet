@@ -1551,3 +1551,19 @@
 - Commit `86f47c3` (`chore(release): bump cli to 0.2.1`) is pushed to `main`; annotated tag `cli-v0.2.1` resolves to the same commit.
 - Release workflow `30633734526` passed all four platform builds and published [cli-v0.2.1](https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.1) with Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and `checksums.txt`.
 - All four downloaded release archives matched the published SHA-256 checksums. Existing unrelated layout/AI worktree changes remained unstaged.
+
+# G067 Fix raw PowerShell installer BOM entry point (2026-07-31)
+
+## Plan
+
+- [x] Reproduce the reported `irm ... | iex` failure against the published raw script and confirm its mechanism.
+- [x] Add regressions for a leading BOM and the public `release-assets/` checksum path.
+- [x] Remove the BOM, update installer defaults to `cli-v0.2.1`, and accept the published checksum path.
+- [x] Run the same raw installer command against the public release in an isolated install root, then publish the public-script fixes.
+
+## Review
+
+- Root cause one: the UTF-8 BOM in `install.ps1` survives `irm` as `U+FEFF`; when piped to `iex`, it makes the initial `param` an unknown command while the non-terminating error still lets the installer continue.
+- Root cause two: the release workflow writes `release-assets/<archive>` in `checksums.txt`, while both installers previously accepted only the archive basename.
+- `e6f7937` makes the raw PowerShell entrypoint BOM-free and advances both installer defaults to `cli-v0.2.1`; `144f6cb` accepts the release checksum path on Windows and Unix.
+- `npm run verify` passed with 313 tests and one Windows symlink-permission skip. The exact public `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex` command completed all seven stages in a temporary root, installed `yt2sheet 0.2.1 windows-x64`, and returned the expected `yt2 help` heading. The temporary root was moved to the Windows Recycle Bin and the user PATH was restored.
