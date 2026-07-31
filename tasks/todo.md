@@ -1535,3 +1535,19 @@
 - Windows schedules an independent hidden cleanup process through `cmd.exe start`; it invokes a temporary PowerShell script after the bundled runtime exits, uses `rmdir` for the bundle tree, and changes the user PATH only when the owned bundle path is present.
 - Parser and uninstall tests passed, the Windows deferred-cleanup fixture removed its temporary root, compiled/source help and npm handoff smokes passed, and `npm run verify` passed with 313 tests plus one symlink-permission skip.
 - POSIX/PowerShell installer syntax, CLI build/package contents, and `git diff --check` passed. A rebuilt Windows standalone bundle printed help and removed its full temporary install root. The Unix symlink fixture is skipped on this Windows host because Developer Mode or `SeCreateSymbolicLinkPrivilege` is unavailable.
+
+# G066 Publish CLI v0.2.1 (2026-07-31)
+
+## Plan
+
+- [x] Bump the npm package and lockfile to `0.2.1` without staging unrelated worktree changes.
+- [x] Run full verification and confirm the release workflow inputs.
+- [x] Commit and push `main`, then tag `cli-v0.2.1`.
+- [x] Publish platform archives, checksums, and user-facing release notes.
+
+## Review
+
+- `npm run verify` passed for `yt2sheet@0.2.1`: 313 tests passed, one Windows symlink fixture was skipped for missing symlink privilege, and CLI/web/extension builds passed.
+- Commit `86f47c3` (`chore(release): bump cli to 0.2.1`) is pushed to `main`; annotated tag `cli-v0.2.1` resolves to the same commit.
+- Release workflow `30633734526` passed all four platform builds and published [cli-v0.2.1](https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.1) with Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and `checksums.txt`.
+- All four downloaded release archives matched the published SHA-256 checksums. Existing unrelated layout/AI worktree changes remained unstaged.
