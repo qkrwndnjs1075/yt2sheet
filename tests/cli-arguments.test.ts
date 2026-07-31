@@ -38,13 +38,22 @@ test("parses output and cookie options", () => {
   });
 });
 
-test("returns help without requiring a URL", () => {
+test("returns help for conventional help entry points", () => {
+  assert.deepEqual(parseCliArguments([], "C:/work"), { kind: "help" });
+  assert.deepEqual(parseCliArguments(["help"], "C:/work"), { kind: "help" });
   assert.deepEqual(parseCliArguments(["--help"], "C:/work"), { kind: "help" });
   assert.deepEqual(parseCliArguments(["-h"], "C:/work"), { kind: "help" });
 });
 
+test("recognizes the standalone uninstall command without accepting extra arguments", () => {
+  assert.deepEqual(parseCliArguments(["uninstall"], "C:/work"), { kind: "uninstall" });
+  assert.deepEqual(parseCliArguments(["uninstall", "extra"], "C:/work"), {
+    kind: "error",
+    message: "uninstall 명령은 추가 인자를 받지 않습니다."
+  });
+});
+
 test("rejects invalid or incomplete arguments", () => {
-  assert.equal(parseCliArguments([], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["not-a-youtube-url"], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["--output"], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["https://youtu.be/1yCkz9VT3ZA", "extra"], "C:/work").kind, "error");

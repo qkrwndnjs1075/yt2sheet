@@ -1,14 +1,17 @@
 import { ScorePipelineError } from "../server/score-job-service";
 import { runProcess, type MediaTools } from "../server/media-tools";
-import { ensureYtDlpExecutable } from "./yt-dlp-bootstrap";
+import { ensureYtDlpExecutable, type YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
-export async function resolveCliMediaTools(cookiesPath?: string): Promise<MediaTools> {
+export async function resolveCliMediaTools(
+  cookiesPath?: string,
+  onInstallProgress?: YtDlpBootstrapProgressHandler
+): Promise<MediaTools> {
   const [ffmpegPath, ffprobePath] = await Promise.all([
     resolvePackagedBinary("ffmpeg"),
     resolvePackagedBinary("ffprobe")
   ]);
   const configuredYtDlp = process.env.YT_DLP_PATH?.trim();
-  const ytDlp = configuredYtDlp || await resolveYtDlpPath();
+  const ytDlp = configuredYtDlp || await resolveYtDlpPath(onInstallProgress);
   const configuredCookiesPath = cookiesPath?.trim() || process.env.YT_DLP_COOKIES_PATH?.trim();
 
   return {
@@ -20,13 +23,13 @@ export async function resolveCliMediaTools(cookiesPath?: string): Promise<MediaT
   };
 }
 
-async function resolveYtDlpPath(): Promise<string> {
+async function resolveYtDlpPath(onInstallProgress?: YtDlpBootstrapProgressHandler): Promise<string> {
   try {
     await runProcess("yt-dlp", ["--version"], { timeoutMs: 5_000 });
     return "yt-dlp";
   } catch {
     try {
-      return await ensureYtDlpExecutable();
+      return await ensureYtDlpExecutable(onInstallProgress);
     } catch (error: unknown) {
       if (error instanceof ScorePipelineError) throw error;
       throw new ScorePipelineError(

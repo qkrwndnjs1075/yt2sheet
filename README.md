@@ -1,149 +1,55 @@
-# Score Frame Collector
+# yt2sheet
 
-Chrome MV3 extension for collecting timestamped score ROI samples from a YouTube watch tab and grouping unique score images locally.
+yt2sheet turns the sheet music shown in a YouTube video into a PDF. Paste a YouTube link, and it saves the visible score pages as a PDF on your computer.
 
-Current scope:
+Use it for videos that already show readable sheet music or tablature on screen. It does not create notation that is not visible in the video.
 
-- validates the active tab is a YouTube `watch` page
-- starts capture from the extension action click
-- asks the user to drag-select the score ROI on top of the YouTube video
-- uses `chrome.tabCapture.getMediaStreamId()` and an offscreen document
-- samples tab video frames every 1000ms
-- crops only the selected score ROI in the offscreen document
-- creates local fingerprints and clusters repeated score samples
-- emits lightweight ROI identity debug metadata
-- shows temporary ROI thumbnail previews in the options page
-- does not persist raw full frames
+## Install
 
-The default path does not call Gemini, Claude, or any candidate judge. Legacy AI judge settings remain explicit-only in the options page for manual experiments; no `.env` key is bundled into the extension build. If you enter a Gemini key directly, Chrome asks for the Gemini host permission. If you use a proxy URL, Chrome asks for that proxy origin.
+No programming setup is required. Paste the command for your computer into a terminal.
 
-## Development
+### Windows
 
-```sh
-npm install
-npm run verify
-```
-
-Load the generated `dist/` directory in `chrome://extensions` with Developer Mode enabled.
-
-## One-command local installation
-
-The general-user distribution is a standalone bundle. It includes its own
-Node.js runtime, FFmpeg, ffprobe, and yt-dlp, so Node.js does not need to be
-installed first. After the `cli-v0.2.0` GitHub Release is published, paste one
-command into the matching terminal:
-
-Windows CMD or PowerShell:
+Open Command Prompt or PowerShell, then run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex"
+irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex
 ```
 
-macOS or Linux:
+Run this command in the current PowerShell window if you want `yt2` to be available immediately. A child command such as `powershell -Command ...` cannot update the parent window's PATH; open a new terminal after that form. The installer prints `### [n/7]` stage markers while it downloads, verifies, and installs the bundle.
+
+### macOS or Linux
+
+Open Terminal, then run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.sh | sh
 ```
 
-The installer detects the operating system and CPU, downloads the matching
-Release archive, verifies its SHA-256 checksum, installs `yt2`, and registers
-it for the user. Open a new terminal after installation, then run:
+## Create a PDF
+
+Open a new terminal after installation and run:
 
 ```sh
 yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-The default output is `yt2sheet-<videoId>.pdf` in the current directory. Use
-`--output` or `-o` for another path. If YouTube requires account verification,
-pass a user-owned Netscape-format cookie file with `--cookies`; it stays on
-the local computer:
+The PDF is saved in the folder where you run the command.
+
+In PowerShell, wrap the entire URL in double quotes when it contains `&`; otherwise PowerShell treats `&` as an operator before `yt2` can receive the URL.
+
+## Uninstall
+
+To remove a standalone installation, run:
 
 ```sh
-yt2 "https://youtu.be/VIDEO_ID" --output ./scores/song.pdf --cookies ./private/youtube-cookies.txt
+yt2 uninstall
 ```
 
-The first release supports Windows x64, macOS Intel, macOS Apple Silicon, and
-Linux x64. The release workflow is `.github/workflows/release-cli.yml`; it
-builds the platform archives from the same CLI and publishes `checksums.txt`.
+This removes the yt2 bundle, its launcher, and the PATH entry added by the installer. Open a new terminal afterward so the current shell refreshes its PATH.
 
-## Local CLI development
-
-Contributors can build the npm-based CLI from this repository:
+If yt2 was installed with npm, run:
 
 ```sh
-npm install
-npm run build:cli
-npm install -g .
-yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
+npm uninstall -g yt2sheet
 ```
-
-The npm package is a developer distribution and requires Node.js. It uses the
-same media pipeline as the standalone bundle. You can override local tools
-with `YT_DLP_PATH`, `FFMPEG_PATH`, or `FFPROBE_PATH`.
-
-## Manual Smoke Test
-
-1. Open `chrome://extensions`.
-2. Load the generated `dist/` folder as an unpacked extension, or click reload after rebuilding.
-3. Open a YouTube `watch` page with score notation visible.
-4. Click the extension action once to start capture.
-5. Drag the score area on the video overlay and click `Use this area`.
-6. Open the extension options page.
-
-The options page shows:
-
-- latest session state and frame metadata
-- recent temporary ROI thumbnail previews
-- ROI identity decision: `same`, `maybe_same`, or `different`
-- cluster counts, accepted counts, pending count, hash distances, projection similarity, and representative quality
-
-Click the extension action again to stop capture.
-
-## Single-server standalone deployment
-
-The standalone web app and the Hono API can run from one Node server. This is
-not an SSR rewrite: Vite builds `dist-web`, and the production Hono app serves
-those files plus `/api/*` from the same origin. The API app remains separately
-testable for fixtures and local development.
-
-### Local production-shaped run
-
-```sh
-npm ci
-npm run build:web
-npm run start:server
-```
-
-The server serves `dist-web` when it exists, defaults to `127.0.0.1:4174`, and
-keeps the existing Vite development workflow on `127.0.0.1:4173`. Set
-`HOST=0.0.0.0` only when the process should accept connections directly from a
-container or network interface.
-
-### Docker run
-
-```sh
-docker build -t yt2sheet .
-docker run --rm --name yt2sheet \
-  -p 8080:8080 \
-  -v yt2sheet-data:/app/.yt2sheet-data \
-  yt2sheet
-```
-
-The image installs `yt-dlp`, `ffmpeg`, and `ffprobe`, builds the web bundle, and
-starts one server on port `8080`. The named data volume preserves the job
-workspace and generated results across container restarts. The backend still
-uses one in-memory job queue and should run as one instance.
-
-Useful environment variables are `HOST`, `PORT`, `YT2SHEET_WEB_ROOT`,
-`YT2SHEET_DATA_ROOT`, `YT_DLP_PATH`, `YT_DLP_JS_RUNTIME`, `YT_DLP_COOKIES_PATH`,
-`FFMPEG_PATH`, and `FFPROBE_PATH`. `YT_DLP_JS_RUNTIME` defaults to `node`.
-`YT_DLP_COOKIES_PATH` is optional and must point to a private Netscape-format
-YouTube cookies file; never commit or log that file. YouTube may still reject
-cloud-hosted requests even when the JavaScript runtime is configured.
-For a Render Docker secret file, use `YT_DLP_COOKIES_PATH=/etc/secrets/youtube-cookies.txt`.
-
-## Current Detector Ceilings
-
-- The sampling loop is intentionally lossy: if the previous analysis/debug send is still running, the next tick is counted as dropped instead of queued.
-- The score identity model is local and heuristic. Tune the fingerprint thresholds when real video samples show false merges or false splits.
-- Near the end of a video, a new `different` ROI sample is held until a consecutive score-like sample confirms it; unconfirmed or overlay-like end samples are excluded from PDF/PNG export.

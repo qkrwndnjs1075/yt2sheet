@@ -7,6 +7,7 @@ import {
   type ScoreJobProcessorContext
 } from "../server/score-job-service";
 import { resolveCliMediaTools } from "./media-tools";
+import type { YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
 export type CliJobOptions = {
   readonly videoId: string;
@@ -15,6 +16,7 @@ export type CliJobOptions = {
   readonly cookiesPath?: string;
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: number) => void;
+  readonly onInstallProgress?: YtDlpBootstrapProgressHandler;
   readonly tools?: MediaTools;
   readonly toolValidator?: (tools: MediaTools) => Promise<void>;
   readonly processorFactory?: (options: {
@@ -30,7 +32,9 @@ export type CliJobResult = {
 
 export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
   const outputPath = resolve(options.outputPath);
-  const tools = options.tools ? createMediaTools(options) : await resolveCliMediaTools(options.cookiesPath);
+  const tools = options.tools
+    ? createMediaTools(options)
+    : await resolveCliMediaTools(options.cookiesPath, options.onInstallProgress);
   await (options.toolValidator ?? assertMediaTools)(tools);
 
   const dataRoot = await mkdtemp(join(tmpdir(), "yt2sheet-cli-"));

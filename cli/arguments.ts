@@ -12,9 +12,20 @@ export type CliRunCommand = {
 export type CliParseResult =
   | { readonly kind: "ok"; readonly command: CliRunCommand }
   | { readonly kind: "help" }
+  | { readonly kind: "uninstall" }
   | { readonly kind: "error"; readonly message: string };
 
 export function parseCliArguments(args: readonly string[], cwd = process.cwd()): CliParseResult {
+  if (args.length === 0 || args[0]?.trim() === "help") {
+    return { kind: "help" };
+  }
+
+  if (args[0]?.trim() === "uninstall") {
+    return args.length === 1
+      ? { kind: "uninstall" }
+      : { kind: "error", message: "uninstall 명령은 추가 인자를 받지 않습니다." };
+  }
+
   let videoUrl: string | undefined;
   let outputPath: string | undefined;
   let cookiesPath: string | undefined;

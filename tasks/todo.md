@@ -1467,3 +1467,71 @@
 - `npm run verify` passed all 327 tests, typecheck, CLI build, standalone web build, and extension build. `npm pack --dry-run` passed.
 - The `cli-v0.2.0` tag triggered run `30627640364`; all four platform build jobs passed. Its Release job initially failed because `gh release create --generate-notes` had no checkout, so `4056709` added checkout and was pushed to `main`.
 - The verified artifacts were published at [https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.0](https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.0) with Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and `checksums.txt`. The uploaded checksums passed `sha256sum --check` before publication.
+
+# G063 Remove remote AI integration and simplify README (2026-07-31)
+
+## Plan
+
+- [x] Remove remote AI settings, calls, permissions, and UI paths so score processing is local-only.
+- [x] Reduce `README.md` to the service description and standalone installation instructions.
+- [x] Run typecheck, tests, builds, static reference checks, and diff validation.
+
+## Review
+
+- Removed the remote AI settings module, candidate judge files/tests, export-network validator, host permissions, runtime messages, and debug settings UI. Export validation now uses the local inspector only.
+- `README.md` now contains only the service description, automatic installer commands for Windows/macOS/Linux, and the `yt2` usage command.
+- `npm run verify` passed: typecheck, 308 tests, CLI build, standalone web build, and Chrome extension build. Live source/manifest/dist reference audit and `git diff --check` passed. Changed TypeScript files had no LSP diagnostics.
+- The no-excuse audit script was attempted but could not resolve the project's TypeScript 7 `unstable` API; the regular TypeScript compiler and full verification passed.
+
+# G064 Friendly CLI help command (2026-07-31)
+
+## Plan
+
+- [x] Make `yt2 help`, `yt2 --help`, and `yt2 -h` display the same readable help output without starting a processing job.
+- [x] Keep direct URL execution and existing output/cookie options unchanged, while making no-argument invocation discoverable.
+- [x] Add parser regression coverage, compiled CLI smoke coverage, and document the command in the CLI installation guide.
+- [x] Run focused tests, CLI typecheck/build/package smoke, installer syntax checks, and diff validation.
+
+## Review
+
+- `parseCliArguments` now treats `help`, `-h`, `--help`, and no arguments as the help path; direct YouTube URL parsing remains covered.
+- The compiled CLI and a generated Windows standalone launcher returned identical help for `help`, `--help`, `-h`, and no arguments without starting a processing job.
+- Focused parser tests passed 4/4; CLI-only TypeScript checking, CLI/build script checks, POSIX and PowerShell installer syntax, `npm pack --dry-run`, and `git diff --check` passed.
+- Full `npm run verify` remains blocked by unrelated concurrent installer-progress edits: `cli/media-tools.ts:32` references `onInstallProgress` outside the `resolveYtDlpPath` scope; those files were not modified for this task.
+- The OMO no-excuse audit could not resolve the TypeScript module from the caller project, so that audit was not completed.
+
+# G064 Install Progress and PowerShell CLI Handoff (2026-07-31)
+
+## Plan
+
+- [x] Add regression coverage for staged installer progress, quoted URL guidance, and first-run yt-dlp progress.
+- [x] Show `### [n/total]` progress through the Windows and POSIX installers and make archive handoff faster where safe.
+- [x] Stream yt-dlp download progress through the local CLI and npm postinstall path without allowing progress to move backward.
+- [x] Make the Windows installer validate the launcher, register PATH clearly, and explain the parent-shell/new-terminal boundary.
+- [x] Update README examples so PowerShell always receives YouTube URLs as one quoted argument.
+- [x] Run targeted tests, typecheck, CLI build, installer syntax checks, bundle help smoke, and the exact quoted-URL CLI path.
+
+## Review
+
+- Root causes were separate: a child PowerShell process cannot update the caller's PATH, PowerShell parses an unquoted `&` before `yt2` receives the URL, and the first-run yt-dlp download had no progress callback.
+- `scripts/install.ps1` and `scripts/install.sh` now report seven staged `### [n/7]` markers, use a same-volume move with a cross-volume copy fallback, validate the launcher, and print current-shell/new-terminal guidance. The PowerShell script is UTF-8 with BOM so Windows PowerShell 5.1 parses it when piped through `iex`.
+- `ensureYtDlpExecutable` now reports monotonic checking, download, checksum, verification, and ready progress to both the CLI and `scripts/install-cli.mjs`.
+- README examples use the direct current-shell PowerShell installer and explicitly require quoting the entire URL when it contains `&`.
+- Focused tests passed 4/4, `npm run build:test`, typecheck, LSP diagnostics, CLI/web/extension builds, installer syntax checks, and `git diff --check` passed. A fake-release installer run emitted 1/7 through 7/7 and restored the original user PATH. The exact quoted URL produced a valid two-page `%PDF-` artifact; the forced bootstrap path emitted `###` progress.
+- `npm run verify` was attempted after concurrent standalone-uninstall files appeared and is currently blocked by the unrelated untracked `tests/cli-uninstall.test.ts` fixture (`ENOENT` while creating `install/app`). The earlier full suite passed 310/310 before those files appeared; the concurrent uninstall files were left untouched. The OMO no-excuse audit also remains unavailable because its script requires a TypeScript 7 unstable API that this repository does not expose.
+
+# G065 Standalone CLI uninstall command (2026-07-31)
+
+## Plan
+
+- [x] Add `yt2 uninstall` with standalone ownership detection and an npm removal handoff.
+- [x] Remove only the owned standalone root, launcher link, PATH entry, and installer-added profile line.
+- [x] Cover Unix cleanup, Windows deferred cleanup, parser behavior, README, and installer completion guidance.
+- [x] Run focused tests, CLI/build checks, uninstall fixture smoke, and diff validation.
+
+## Review
+
+- `yt2 uninstall` now validates the standalone `VERSION` and directory contract before removing anything; npm-managed installs receive `npm uninstall -g yt2sheet` instead.
+- Windows schedules an independent hidden PowerShell cleanup so the running Node runtime can exit before its install root is removed; the user PATH entry is changed only when the owned bundle path is present.
+- Parser and uninstall tests passed, the Windows deferred-cleanup fixture removed its temporary root, compiled/source help and npm handoff smokes passed, and `npm run verify` passed with 313 tests plus one symlink-permission skip.
+- POSIX/PowerShell installer syntax, CLI build/package contents, and `git diff --check` passed. The Unix symlink fixture is skipped on this Windows host because Developer Mode or `SeCreateSymbolicLinkPrivilege` is unavailable.
