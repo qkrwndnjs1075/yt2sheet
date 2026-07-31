@@ -48,3 +48,23 @@
 # 2026-07-31 - Use the user's requested Chrome surface for deployment
 
 - When the user explicitly asks for Chrome control, use the connected user Chrome session rather than a separate browser automation session. Keep authentication, OTP, and provider permission approvals with the user.
+
+# 2026-07-31 - Keep YouTube authentication scoped to the processing user
+
+- A Render `YT_DLP_COOKIES_PATH` secret is one server-wide account credential, not per-user authentication. For a multi-user product, prefer local processing or an explicit user-scoped authentication design; never treat a shared cookie as the public-service auth model.
+
+# 2026-07-31 - Prefer a local CLI when the requested product needs no GUI
+
+- If the user wants cross-platform local execution and does not need an interactive UI, expose the existing processing engine through an npm CLI before proposing a desktop wrapper. Keep the server UI out of the critical path and make user-owned authentication local and opt-in.
+
+# 2026-07-31 - Separate developer npm distribution from general-user installation
+
+- `npm`/`npx` still require Node.js, so they are a developer distribution path rather than a complete general-user installation experience. Keep the npm CLI, but add signed OS-specific installers or standalone executables for users who should not install Node manually.
+
+# 2026-07-31 - Use one download link as the general-user installer entrypoint
+
+- A single download URL can detect OS and architecture and route to the matching installer, but browsers and operating systems still require the user to download, launch, and approve installation. Describe this as one-click installation, not silent installation.
+
+# 2026-07-31 - Use a command bootstrapper when the user wants OMO-style installation
+
+- If the desired experience is one pasted command rather than npm, host signed OS-aware installer scripts that download prebuilt `yt2` artifacts and register the command; the command must bundle its own runtime and must not require Node.js first.

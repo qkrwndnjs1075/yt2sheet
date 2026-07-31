@@ -8,7 +8,7 @@ import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type Sc
 import { createScorePdfFromFrames, listExtractedFrames } from "./score-video-processor";
 import { createOwnedWorkDirectoryName } from "./workspace-cleanup";
 
-const logger = pino({ name: "yt2sheet-server" });
+const logger = pino({ name: "yt2sheet-server", level: process.env.YT2SHEET_LOG_LEVEL?.trim() || "info" });
 const MAX_DURATION_SECONDS = 2 * 60 * 60;
 const MAX_EXTRACTED_FRAMES = 3_600;
 

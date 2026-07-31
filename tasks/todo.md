@@ -1,5 +1,32 @@
 # ROI Score Export Pipeline
 
+# 2026-07-31 Video-to-Score architecture review
+
+## Plan
+
+- [x] Compare the proposed independent video-score flow with the existing standalone image-to-PDF boundary.
+- [x] Identify blocking lifecycle, contract, and notation-generation gaps without changing product code.
+- [x] Record the review verdict and required design changes.
+
+## Review
+
+- Verdict: REQUEST CHANGES before implementation. The two analyzers and shared activation-to-note boundary are appropriate, but the proposed system needs a durable video-specific control plane instead of reusing the process-local score-job service.
+- Required: versioned calibration/analysis state with explicit user-action blockers; dense frame observations that distinguish inactive, occluded, and unknown; a complete notation request (meter, beat origin, pickup and quantization policy); and a versioned worker/artifact protocol.
+- Required: separate upload/object storage, ownership checks, resource limits, sandboxed media decoding, pinned worker/model/renderer dependencies, and independently downloadable MIDI, MusicXML and PDF artifacts.
+- Important: keep physical and falling-bar calibration algorithms separate behind one output contract, snap partial-keyboard anchors to detected keys, preserve re-attacks across observed release gaps, and persist profile/model versions with confidence evidence.
+- No product code, deployment configuration, tests, or runtime processes were changed for this review.
+
+# 2026-07-31 Revised Video-to-Score architecture review
+
+## Review
+
+- Verdict: REQUEST CHANGES, narrowed to execution-completeness. The revision correctly adds a durable control plane, immutable calibration/analysis/notation revisions, PTS-keyed total observations, notation inputs, provenance, ownership, and source-disjoint acceptance gates.
+- Required: define source-ingestion, calibration-suggestion, and render request/result messages plus their attempt/lease/retry records. The documented analysis messages alone cannot advance every declared phase.
+- Required: make every worker write attempt-scoped immutable keys, use conditional object writes, and promote one result with a revision-scoped compare-and-set. A unique analysis fingerprint does not prevent concurrent at-least-once deliveries from writing the same `analysis/{revision}` prefix.
+- Required: validate worker artifact prefixes, object metadata/checksums, IAM scope, and manifest schemas independently of worker-supplied fields; add cancellation, timeout, liveness recovery, expiration, and owner-initiated deletion semantics.
+- Important: encode legal visibility/activation combinations as a discriminated schema, bound frame/chunk size and source duration, define hard quality-gate outcomes, and add token entropy/no-store/rate-limit rules plus an explicit calibration coordinate-space identifier.
+- No product code, deployment configuration, tests, or runtime processes were changed for this review.
+
 # 2026-07-29 Restart frontend and backend persistently
 
 ## Plan
@@ -1372,3 +1399,70 @@
 
 - The repeated Render log is from the pre-fix image: `origin/main` and local `HEAD` are still `e6038c0`, while the yt-dlp runtime fix remains uncommitted in the working tree.
 - Before the user-authorized commit/push, `origin/main` was still `e6038c0`; the source fix is now ready for Render to rebuild from the pushed commit.
+
+# G059 Cross-platform installable migration feasibility (2026-07-31)
+
+## Plan
+
+- [x] Confirm the current web/API process boundary and native media-tool dependencies.
+- [x] Compare a single auto-detect download link with platform-specific installer/update channels.
+- [x] Decide whether the first migration should be a desktop wrapper, a local agent, or a full native client.
+
+## Review
+
+- The current standalone path is one Node/Hono process serving `dist-web` and `/api`, with an in-memory two-job queue and local result files; the processor requires `yt-dlp`, `ffmpeg`, and `ffprobe`.
+- Recommended first migration: an Electron desktop wrapper that starts the same local API on loopback, loads the existing web UI, and bundles platform-specific media binaries. This avoids a full native rewrite and removes Render's shared outbound-IP dependency from the main processing path.
+- A single download URL can detect OS in a landing page and redirect to Windows NSIS, macOS DMG/ZIP, or Linux AppImage artifacts. It cannot silently install an application; the user must still approve the download and installation. CPU architecture and macOS signing/notarization need explicit release handling.
+- Tauri or a PWA is not the first choice: Tauri adds a Rust host plus sidecar packaging around the existing Node processor, while a PWA leaves media processing on the blocked server.
+- No product source or deployment configuration changed for this feasibility review; only this task record was updated.
+
+# G060 Local npm CLI migration direction (2026-07-31)
+
+## Plan
+
+- [x] Confirm the existing standalone processor can be invoked without the web UI.
+- [x] Define the local command and authentication boundary.
+- [x] Choose the package, first-run dependency, and output-file delivery strategy.
+
+## Review
+
+- The existing server pipeline already has a clear input (`videoId`, `videoUrl`) and a concrete PDF result path, so it can be exposed through a CLI adapter without preserving the Hono server or browser UI.
+- Proposed user contract: `npx @yt2sheet/cli <YouTube URL>` for no-install use, or `npm install -g @yt2sheet/cli` followed by `yt2 <YouTube URL>` for repeat use. The final npm package name must be checked before publishing.
+- The CLI runs the current media pipeline on the user's own machine and writes `yt2sheet-<videoId>.pdf` to the current directory by default, with `--output` for an explicit path. Render remains optional only for documentation and release-file hosting.
+- On first run, the package must obtain or include the correct platform/architecture `yt-dlp`, `ffmpeg`, and `ffprobe` executables with pinned versions and integrity checks; `sharp` also needs target-platform support. Do not require users to manually configure system PATH for the default path.
+- Authentication is local and opt-in: normal videos use the local network identity; a blocked video can accept an explicitly supplied user-owned cookie file or browser-cookie option, never a shared server credential.
+- No product code or deployment configuration changed for this direction decision.
+
+# G061 Local npm CLI migration implementation (2026-07-31)
+
+## Plan
+
+- [x] Add the `yt2` command parser with default output, explicit output, cookies, help, and validation paths.
+- [x] Reuse `YouTubeScoreProcessor` directly through a temporary local job runner and copy the resulting PDF to the requested path.
+- [x] Add npm `bin`, CLI build output, postinstall bootstrap, platform media binaries, and package documentation.
+- [x] Run the complete test/build/package verification and record a fresh real-link PDF smoke result.
+
+## Review
+
+- Added `yt2` as the package bin and `npx yt2sheet <URL>` as the one-off path; output defaults to `yt2sheet-<videoId>.pdf` and supports `--output`/`--cookies`.
+- The CLI reuses `YouTubeScoreProcessor` directly, isolates each job in a temporary data root, cleans it on exit, and copies only the generated PDF to the requested path.
+- FFmpeg 6.1.1 and ffprobe platform packages are resolved locally; yt-dlp 2026.07.04 is downloaded to an OS/architecture-specific cache and SHA-256 verified. Environment overrides remain available.
+- `npm run verify` passed typecheck, all 327 tests, CLI build, standalone web build, and extension build. `npm pack --dry-run` and an actual packed-package `yt2 --help` smoke passed. `git diff --check` passed.
+- Real local smoke with `https://www.youtube.com/watch?v=1yCkz9VT3ZA` produced a 5-page, 2,153,690-byte PDF beginning with `%PDF-`; the final CLI run had no stderr or server JSON log leakage.
+
+# G062 One-command standalone CLI distribution (2026-07-31)
+
+## Plan
+
+- [x] Add a standalone bundle containing the Node runtime, production dependencies, FFmpeg/ffprobe, and yt-dlp.
+- [x] Add OS-aware PowerShell and shell bootstrap installers with checksum verification and per-user PATH registration.
+- [x] Add a tag-driven GitHub Release workflow for Windows x64, macOS Intel/Apple Silicon, and Linux x64 archives.
+- [x] Run bundle, installer-script, workflow, and full project verification.
+
+## Review
+
+- `node --check scripts/build-bundle.mjs`, PowerShell parsing, `sh -n scripts/install.sh`, and `git diff --check` passed.
+- A Windows standalone bundle generated its own Node runtime and ran `yt2 --help`; the same bundle processed `1yCkz9VT3ZA` into a 5-page, 2,153,690-byte PDF beginning with `%PDF-`.
+- A local fake Release server passed the PowerShell installer's archive download, SHA-256 verification, extraction, per-user install path, and PATH registration flow; the test restored the original user PATH.
+- `npm run verify` passed all 327 tests, typecheck, CLI build, standalone web build, and extension build. `npm pack --dry-run` passed.
+- The Release workflow uses current `macos-15-intel` and `macos-15` runners for Intel and Apple Silicon. GitHub Actions was not run because no commit, tag, or push was authorized; publishing `cli-v0.2.0` will create the four archives and `checksums.txt`.

@@ -26,6 +26,61 @@ npm run verify
 
 Load the generated `dist/` directory in `chrome://extensions` with Developer Mode enabled.
 
+## One-command local installation
+
+The general-user distribution is a standalone bundle. It includes its own
+Node.js runtime, FFmpeg, ffprobe, and yt-dlp, so Node.js does not need to be
+installed first. After the `cli-v0.2.0` GitHub Release is published, paste one
+command into the matching terminal:
+
+Windows CMD or PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex"
+```
+
+macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.sh | sh
+```
+
+The installer detects the operating system and CPU, downloads the matching
+Release archive, verifies its SHA-256 checksum, installs `yt2`, and registers
+it for the user. Open a new terminal after installation, then run:
+
+```sh
+yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+The default output is `yt2sheet-<videoId>.pdf` in the current directory. Use
+`--output` or `-o` for another path. If YouTube requires account verification,
+pass a user-owned Netscape-format cookie file with `--cookies`; it stays on
+the local computer:
+
+```sh
+yt2 "https://youtu.be/VIDEO_ID" --output ./scores/song.pdf --cookies ./private/youtube-cookies.txt
+```
+
+The first release supports Windows x64, macOS Intel, macOS Apple Silicon, and
+Linux x64. The release workflow is `.github/workflows/release-cli.yml`; it
+builds the platform archives from the same CLI and publishes `checksums.txt`.
+
+## Local CLI development
+
+Contributors can build the npm-based CLI from this repository:
+
+```sh
+npm install
+npm run build:cli
+npm install -g .
+yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+The npm package is a developer distribution and requires Node.js. It uses the
+same media pipeline as the standalone bundle. You can override local tools
+with `YT_DLP_PATH`, `FFMPEG_PATH`, or `FFPROBE_PATH`.
+
 ## Manual Smoke Test
 
 1. Open `chrome://extensions`.

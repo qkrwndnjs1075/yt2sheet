@@ -8,6 +8,7 @@
     "types": ["node", "chrome"]
   },
   "include": [
+    "cli/**/*.ts",
     "src/shared/**/*.ts",
     "src/offscreen/layout/**/*.ts",
     "src/offscreen/frame-sink.ts",

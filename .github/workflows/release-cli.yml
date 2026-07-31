@@ -1,0 +1,92 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - cli-v*
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: windows-x64
+            archive: zip
+          - runner: macos-15-intel
+            target: darwin-x64
+            archive: tar.gz
+          - runner: macos-15
+            target: darwin-arm64
+            archive: tar.gz
+          - runner: ubuntu-latest
+            target: linux-x64
+            archive: tar.gz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        env:
+          YT2SHEET_SKIP_TOOL_INSTALL: "1"
+        run: npm ci
+      - name: Build CLI
+        run: npm run build:cli
+      - name: Keep production dependencies
+        env:
+          YT2SHEET_SKIP_TOOL_INSTALL: "1"
+        run: npm prune --omit=dev
+      - name: Build standalone bundle
+        run: npm run build:bundle -- --output release-bundle --target ${{ matrix.target }}
+      - name: Archive Windows bundle
+        if: ${{ matrix.archive == 'zip' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Compress-Archive -Path release-bundle\* -DestinationPath "release-assets\yt2sheet-${{ matrix.target }}.zip" -Force
+      - name: Archive Unix bundle
+        if: ${{ matrix.archive == 'tar.gz' }}
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          tar -czf "release-assets/yt2sheet-${{ matrix.target }}.tar.gz" -C release-bundle .
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    if: ${{ github.event_name == 'push' }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        shell: bash
+        run: sha256sum release-assets/* > release-assets/checksums.txt
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --verify-tag \
+            --title "yt2sheet $GITHUB_REF_NAME" \
+            --generate-notes
