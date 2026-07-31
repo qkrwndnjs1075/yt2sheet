@@ -10,14 +10,15 @@
 - [x] Make the raw PowerShell installer null-safe at its environment and URL boundaries and add the smallest regression contract.
 - [x] Run focused tests, diagnostics, real Windows/PowerShell surface QA, and tear down every fixture.
 - [x] Run full applicable verification over the mixed worktree, then bump and verify the next CLI patch release.
-- [ ] Commit and push all requested current changes on `main`, tag `cli-v0.2.3`, and verify the published release assets/checksums.
+- [x] Commit and push all requested current changes on `main`, tag `cli-v0.2.3`, and verify the published release assets/checksums.
 
 ## Review
 
 - Windows fixture red/green proof: the old implementation returned `deferred: true`; the fixed path returns `deferred: false` and removes the fixture root. The real `0.2.3` bundle uses the launcher handoff required by Windows file locks, returns uninstall exit code `0`, prints no scheduled-cleanup message, and removed its root after the lock-release window without user action.
 - The PowerShell installer remains BOM-free and WebClient-based, now guards missing `LOCALAPPDATA`, release URL, and download-client disposal paths. The public `cli-v0.2.2` raw `irm | iex` flow completed all seven stages in an isolated root; the final `cli-v0.2.3` default flow is the post-publication gate.
 - `npm run verify` passed: 313 tests passed, one Windows symlink fixture skipped because this host lacks symlink privilege, and CLI/web/extension builds passed. Focused uninstall/installer tests passed 3/3 with the same skip, and `node --check scripts/build-bundle.mjs` passed.
-- Pending only: commit/push all current worktree changes, publish `cli-v0.2.3`, and rerun the exact public default installer against that release.
+- Final release proof: `main` contains the requested changes, annotated tag `cli-v0.2.3` points to `873dea9`, workflow `30642292167` passed all four platform builds and published the four archives plus `checksums.txt`, and the Windows ZIP checksum matched.
+- The exact public default `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex` flow completed all seven stages in an isolated root; the installed launcher existed and `yt2 help` exited `0`.
 
 # G069 Release every distribution-facing push (2026-07-31)
 
