@@ -84,7 +84,6 @@ function makeWeakProposal(): ScoreRegionProposal {
     },
     finalScores: {
       ruleScore: 0.45,
-      aiScore: 0,
       temporalStabilityScore: 0,
       finalScore: 0.45
     },

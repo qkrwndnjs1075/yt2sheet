@@ -5,15 +5,6 @@ export type Rect = {
   height: number;
 };
 
-export type CandidateJudgeLabel =
-  | "score_system"
-  | "score_region"
-  | "piano_keyboard"
-  | "hands"
-  | "subtitle_or_ui"
-  | "background"
-  | "unknown";
-
 export type ScoreRegion = {
   id: string;
   rect: Rect;
@@ -38,15 +29,8 @@ export type ScoreRegionProposal = {
     contrastScore: number;
     finalRuleScore: number;
   };
-  ai?: {
-    label: CandidateJudgeLabel;
-    isScoreCandidate: boolean;
-    confidence: number;
-    reason: string;
-  };
   finalScores: {
     ruleScore: number;
-    aiScore: number;
     temporalStabilityScore: number;
     finalScore: number;
   };
@@ -84,7 +68,7 @@ export type DetectedSystem = {
   kind: "single_staff" | "grand_staff" | "tab" | "tab_plus_staff" | "chord_sheet" | "handwritten" | "unknown";
   staffCandidates: StaffCandidate[];
   confidence: number;
-  source: "staff_grouping" | "ai_score_system" | "ai_score_region" | "temporal_fallback" | "previous_position_fallback";
+  source: "staff_grouping" | "temporal_fallback" | "previous_position_fallback";
   groupingReason: {
     staffCount: number;
     xAlignmentScore: number;
@@ -123,23 +107,6 @@ export type TrackedRegionProposal = {
   status: "tracking" | "stable" | "lost";
 };
 
-export type AiJudgeDebugInfo = {
-  enabled: boolean;
-  called: boolean;
-  skippedReason?: string;
-  contactSheetCandidateIds: string[];
-  latencyMs?: number;
-  results?: {
-    candidateId: string;
-    label: CandidateJudgeLabel;
-    confidence: number;
-    reason: string;
-  }[];
-  cacheHits: string[];
-  cacheMisses: string[];
-  error?: string;
-};
-
 export type LayoutDebugInfo = {
   videoRoiRect: Rect;
   resizedFrameSize: {
@@ -172,7 +139,6 @@ export type LayoutDebugInfo = {
   };
   systems?: DetectedSystem[];
   finalSystems?: DetectedSystem[];
-  aiJudge?: AiJudgeDebugInfo;
   failureReason?: string;
   processingTimeMs: number;
 };
@@ -201,7 +167,6 @@ export type FrameLayoutSummary = Omit<FrameLayout, "debug"> & {
       stableBoxCount: number;
       stableRegionCount?: number;
     };
-    aiJudge?: AiJudgeDebugInfo;
     failureReason?: string;
     processingTimeMs: number;
   };

@@ -5,8 +5,8 @@ import { LocalExportScoreInspector, validateExportScores, type ScoreInspectionRe
 import type { ExportScoreImageCleaner } from "../src/background/export-score-image-cleaner.js";
 import type { DebugUniqueScore } from "../src/shared/messages.js";
 
-const VALID: ScoreInspectionResult = { status: "valid", confidence: 0.95, reason: "clean score", source: "ai" };
-const CONTAMINATED: ScoreInspectionResult = { status: "contaminated", confidence: 0.96, reason: "overlay covers notation", source: "ai" };
+const VALID: ScoreInspectionResult = { status: "valid", confidence: 0.95, reason: "clean score", source: "local" };
+const CONTAMINATED: ScoreInspectionResult = { status: "contaminated", confidence: 0.96, reason: "overlay covers notation", source: "local" };
 const LOCAL_VALID: ScoreInspectionResult = { status: "valid", confidence: 0.82, reason: "local clean score", source: "local" };
 const LOCAL_CONTAMINATED: ScoreInspectionResult = { status: "contaminated", confidence: 0.9, reason: "local overlay", source: "local" };
 
@@ -18,7 +18,7 @@ test("export validation preserves repeated occurrence scores when occurrence ord
   const firstC = occurrenceScore("score-C1", "C", 4, "occ-C-1", 4, 1);
   const options = {
     occurrenceOrder: ["occ-A-1", "occ-B-1", "occ-A-2", "occ-C-1"],
-    aiInspector: inspector({ "score-A1": VALID, "score-B1": VALID, "score-A2": VALID, "score-C1": VALID })
+    localInspector: inspector({ "score-A1": VALID, "score-B1": VALID, "score-A2": VALID, "score-C1": VALID })
   };
 
   // When: validation uses occurrenceOrder instead of legacy cluster order.
@@ -39,7 +39,7 @@ test("export validation keeps legacy score order as one score per cluster fallba
   // When: only legacy scoreOrder is provided.
   const report = await validateExportScores([firstA, firstB, secondA], {
     scoreOrder: ["B", "A"],
-    aiInspector: inspector({ "score-A1": VALID, "score-B1": VALID, "score-A2": VALID })
+    localInspector: inspector({ "score-A1": VALID, "score-B1": VALID, "score-A2": VALID })
   });
 
   // Then: the legacy fallback returns one score per cluster in requested order.
@@ -58,7 +58,7 @@ test("export validation replaces only the contaminated occurrence when a clean s
   const options = {
     occurrenceOrder: ["occ-A-1", "occ-B-1", "occ-A-2", "occ-C-1"],
     candidates: [wrongOccurrenceCandidate, matchingOccurrenceCandidate],
-    aiInspector: inspector({
+    localInspector: inspector({
       "score-A1": VALID,
       "score-B1": VALID,
       "score-A2-bad": CONTAMINATED,
@@ -96,7 +96,7 @@ test("export validation preserves occurrence identity when replacement candidate
   const options = {
     occurrenceOrder: ["occ-A-1", "occ-B-1", "occ-A-2", "occ-C-1"],
     candidates: [clusterLevelCandidate],
-    aiInspector: inspector({
+    localInspector: inspector({
       "score-A1": VALID,
       "score-B1": VALID,
       "score-A2-bad": CONTAMINATED,
@@ -142,7 +142,7 @@ test("export validation excludes only the contaminated occurrence when no clean 
   const options = {
     occurrenceOrder: ["occ-A-1", "occ-B-1", "occ-A-2", "occ-C-1"],
     candidates: [missingImageCandidate],
-    aiInspector: inspector({
+    localInspector: inspector({
       "score-A1": VALID,
       "score-B1": VALID,
       "score-A2-bad": CONTAMINATED,
@@ -168,20 +168,19 @@ test("export validation excludes only the contaminated occurrence when no clean 
   assert.equal(report.summary.excludedCount, 1);
 });
 
-test("export validation replaces an AI-detected contaminated capture with a clean same-cluster candidate", async () => {
+test("export validation replaces a locally detected contaminated capture with a clean same-cluster candidate", async () => {
   const primary = score("score-A-bad", "A", 1);
   const replacement = score("score-A-clean", "A", 2);
   const other = score("score-B", "B", 3);
   const report = await validateExportScores([primary, other], {
     scoreOrder: ["A", "B"],
     candidates: [primary, replacement, other],
-    aiInspector: inspector({ "score-A-bad": CONTAMINATED, "score-A-clean": VALID, "score-B": VALID })
+    localInspector: inspector({ "score-A-bad": CONTAMINATED, "score-A-clean": VALID, "score-B": VALID })
   });
 
   assert.deepEqual(report.scores.map((item) => item.id), ["score-A-clean", "score-B"]);
   assert.equal(report.summary.replacedCount, 1);
   assert.equal(report.summary.excludedCount, 0);
-  assert.equal(report.summary.aiUsed, true);
   assert.deepEqual(report.decisions.map((decision) => ({
     action: decision.action,
     scoreId: decision.scoreId,
@@ -192,45 +191,12 @@ test("export validation replaces an AI-detected contaminated capture with a clea
   ]);
 });
 
-test("export validation falls back to local rules when AI fails", async () => {
-  const primary = score("score-A-bad", "A", 1);
-  const replacement = score("score-A-clean", "A", 2);
-  const report = await validateExportScores([primary], {
-    scoreOrder: ["A"],
-    candidates: [primary, replacement],
-    aiInspector: throwingInspector(),
-    localInspector: inspector({ "score-A-bad": LOCAL_CONTAMINATED, "score-A-clean": LOCAL_VALID })
-  });
-
-  assert.deepEqual(report.scores.map((item) => item.id), ["score-A-clean"]);
-  assert.equal(report.summary.replacedCount, 1);
-  assert.equal(report.summary.fallbackUsed, true);
-});
-
-test("export validation falls back to local rules when AI is uncertain", async () => {
-  const primary = score("score-A-bad", "A", 1);
-  const replacement = score("score-A-clean", "A", 2);
-  const report = await validateExportScores([primary], {
-    scoreOrder: ["A"],
-    candidates: [primary, replacement],
-    aiInspector: inspector({
-      "score-A-bad": { status: "uncertain", confidence: 0.4, reason: "ambiguous", source: "ai" },
-      "score-A-clean": VALID
-    }),
-    localInspector: inspector({ "score-A-bad": LOCAL_CONTAMINATED, "score-A-clean": LOCAL_VALID })
-  });
-
-  assert.deepEqual(report.scores.map((item) => item.id), ["score-A-clean"]);
-  assert.equal(report.summary.replacedCount, 1);
-  assert.equal(report.summary.fallbackUsed, true);
-});
-
 test("export validation excludes a contaminated capture when no clean replacement exists", async () => {
   const primary = score("score-A-bad", "A", 1);
   const report = await validateExportScores([primary], {
     scoreOrder: ["A"],
     candidates: [primary],
-    aiInspector: inspector({ "score-A-bad": CONTAMINATED })
+    localInspector: inspector({ "score-A-bad": CONTAMINATED })
   });
 
   assert.deepEqual(report.scores, []);
@@ -255,7 +221,7 @@ test("export validation keeps clean captures unchanged", async () => {
   const second = score("score-B", "B", 2);
   const report = await validateExportScores([first, second], {
     scoreOrder: ["B", "A"],
-    aiInspector: inspector({ "score-A": VALID, "score-B": VALID })
+    localInspector: inspector({ "score-A": VALID, "score-B": VALID })
   });
 
   assert.deepEqual(report.scores.map((item) => item.id), ["score-B", "score-A"]);
@@ -355,7 +321,7 @@ test("export validation accepts a full-width compact score even when it is short
 
   const report = await validateExportScores([first, compact, third], {
     scoreOrder: ["A", "B", "C"],
-    aiInspector: {
+    localInspector: {
       inspect: async (item) => {
         inspected.push(item.id);
         return VALID;
@@ -368,7 +334,7 @@ test("export validation accepts a full-width compact score even when it is short
   assert.equal(report.decisions[1]?.action, "kept");
 });
 
-test("export validation still rejects a clearly width-truncated geometry outlier before AI inspection", async () => {
+test("export validation still rejects a clearly width-truncated geometry outlier before local inspection", async () => {
   const first = score("score-A", "A", 1);
   const clipped = score("score-B-clipped", "B", 2);
   const third = score("score-C", "C", 3);
@@ -382,7 +348,7 @@ test("export validation still rejects a clearly width-truncated geometry outlier
 
   const report = await validateExportScores([first, clipped, third], {
     scoreOrder: ["A", "B", "C"],
-    aiInspector: {
+    localInspector: {
       inspect: async (item) => {
         inspected.push(item.id);
         return VALID;
@@ -435,14 +401,6 @@ function inspector(results: Record<string, ScoreInspectionResult>): ScoreInspect
   return {
     async inspect(score) {
       return results[score.id] ?? VALID;
-    }
-  };
-}
-
-function throwingInspector(): ScoreInspector {
-  return {
-    async inspect() {
-      throw new Error("AI unavailable");
     }
   };
 }

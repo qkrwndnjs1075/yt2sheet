@@ -1,5 +1,4 @@
 // allow: SIZE_OK - inherited validation and replacement-selection seam; accepted debt to preserve occurrence identity.
-import { CLAUDE_JUDGE_SETTINGS_KEY, GEMINI_API_PERMISSION, type ClaudeJudgeSettings, normalizeClaudeJudgeSettings } from "../shared/ai-judge-settings";
 import type { DebugUniqueScore, ExportValidationDetail, ExportValidationSummary } from "../shared/messages";
 import { orderScoreOccurrences } from "../shared/score-occurrences";
 import { BrowserExportScoreImageCleaner, type ExportScoreImageCleaner } from "./export-score-image-cleaner";
@@ -11,7 +10,7 @@ export type ScoreInspectionResult = {
   status: ScoreInspectionStatus;
   confidence: number;
   reason: string;
-  source: "ai" | "local";
+  source: "local";
 };
 
 export type ScoreInspector = {
@@ -28,7 +27,6 @@ type ValidateExportScoresOptions = {
   occurrenceOrder?: string[];
   scoreOrder?: string[];
   candidates?: DebugUniqueScore[];
-  aiInspector?: ScoreInspector;
   localInspector?: ScoreInspector;
   imageCleaner?: ExportScoreImageCleaner;
 };
@@ -37,7 +35,6 @@ type ScoreGeometryBaseline = {
   readonly medianWidth: number;
 };
 
-const UNCERTAIN_CONFIDENCE_CUTOFF = 0.65;
 export async function validateExportScores(
   scores: DebugUniqueScore[],
   options: ValidateExportScoresOptions = {}
@@ -57,21 +54,17 @@ export async function validateExportScores(
   const candidatesByClusterId = groupCandidatesByClusterId([...(options.candidates ?? []), ...scores]);
   const validatedScores: DebugUniqueScore[] = [];
   const decisions: ExportValidationDetail[] = [];
-  let aiUsed = false;
-  let fallbackUsed = false;
 
   for (const score of selectedScores) {
-    const inspection = await inspectWithFallback(score, options.aiInspector, localInspector, geometryBaseline);
-    aiUsed ||= inspection.aiUsed;
-    fallbackUsed ||= inspection.fallbackUsed;
+    const inspection = await inspectScore(score, localInspector, geometryBaseline);
 
-    if (isExportable(inspection.result)) {
+    if (isExportable(inspection)) {
       validatedScores.push(score);
       decisions.push({
         ...validationDecisionIdentity(score),
         action: "kept",
-        reason: inspection.result.reason,
-        validator: inspection.result.source
+        reason: inspection.reason,
+        validator: inspection.source
       });
       continue;
     }
@@ -80,21 +73,18 @@ export async function validateExportScores(
       score,
       candidatesByClusterId.get(score.clusterId) ?? [],
       imageCleaner,
-      options.aiInspector,
       localInspector,
       geometryBaseline
     );
-    aiUsed ||= replacement.aiUsed;
-    fallbackUsed ||= replacement.fallbackUsed;
 
-    if (replacement.score) {
-      validatedScores.push(scoreForReplacementOccurrence(score, replacement.score));
+    if (replacement) {
+      validatedScores.push(scoreForReplacementOccurrence(score, replacement));
       decisions.push({
         ...validationDecisionIdentity(score),
         action: "replaced",
-        reason: inspection.result.reason,
-        replacementScoreId: replacement.score.id,
-        validator: inspection.result.source
+        reason: inspection.reason,
+        replacementScoreId: replacement.id,
+        validator: inspection.source
       });
       continue;
     }
@@ -102,8 +92,8 @@ export async function validateExportScores(
     decisions.push({
       ...validationDecisionIdentity(score),
       action: "excluded",
-      reason: inspection.result.reason,
-      validator: inspection.result.source
+      reason: inspection.reason,
+      validator: inspection.source
     });
   }
 
@@ -111,8 +101,6 @@ export async function validateExportScores(
     keptCount: decisions.filter((decision) => decision.action === "kept").length,
     replacedCount: decisions.filter((decision) => decision.action === "replaced").length,
     excludedCount: decisions.filter((decision) => decision.action === "excluded").length,
-    aiUsed,
-    fallbackUsed,
     notes: decisions
       .filter((decision) => decision.action !== "kept")
       .map((decision) => `${decision.clusterId}: ${decision.action} (${decision.reason})`)
@@ -121,64 +109,35 @@ export async function validateExportScores(
   return { scores: validatedScores, decisions, summary };
 }
 
-export function createDefaultAiExportScoreInspector(): ScoreInspector {
-  return new GeminiExportScoreInspector();
-}
-
-async function inspectWithFallback(
+async function inspectScore(
   score: DebugUniqueScore,
-  aiInspector: ScoreInspector | undefined,
   localInspector: ScoreInspector,
   geometryBaseline: ScoreGeometryBaseline | null
-): Promise<{ result: ScoreInspectionResult; aiUsed: boolean; fallbackUsed: boolean }> {
+): Promise<ScoreInspectionResult> {
   const geometryInspection = inspectScoreGeometry(score, geometryBaseline);
-  if (geometryInspection) {
-    return { result: geometryInspection, aiUsed: false, fallbackUsed: false };
-  }
-
-  if (aiInspector) {
-    try {
-      const aiResult = await aiInspector.inspect(score);
-      if (aiResult.status !== "uncertain" && aiResult.confidence >= UNCERTAIN_CONFIDENCE_CUTOFF) {
-        return { result: aiResult, aiUsed: true, fallbackUsed: false };
-      }
-    } catch {
-      // Local validation remains the required non-blocking fallback.
-    }
-  }
-
-  return {
-    result: await localInspector.inspect(score),
-    aiUsed: false,
-    fallbackUsed: Boolean(aiInspector)
-  };
+  return geometryInspection ?? localInspector.inspect(score);
 }
 
 async function findCleanReplacement(
   original: DebugUniqueScore,
   candidates: DebugUniqueScore[],
   imageCleaner: ExportScoreImageCleaner,
-  aiInspector: ScoreInspector | undefined,
   localInspector: ScoreInspector,
   geometryBaseline: ScoreGeometryBaseline | null
-): Promise<{ score: DebugUniqueScore | null; aiUsed: boolean; fallbackUsed: boolean }> {
-  let aiUsed = false;
-  let fallbackUsed = false;
+): Promise<DebugUniqueScore | null> {
   const ordered = candidates
     .filter((candidate) => canReplaceScoreOccurrence(original, candidate))
     .sort((a, b) => compareReplacementCandidate(original, a, b));
 
   for (const candidate of ordered) {
     const cleanedCandidate = await imageCleaner.clean(candidate, candidates);
-    const inspection = await inspectWithFallback(cleanedCandidate, aiInspector, localInspector, geometryBaseline);
-    aiUsed ||= inspection.aiUsed;
-    fallbackUsed ||= inspection.fallbackUsed;
-    if (isExportable(inspection.result)) {
-      return { score: cleanedCandidate, aiUsed, fallbackUsed };
+    const inspection = await inspectScore(cleanedCandidate, localInspector, geometryBaseline);
+    if (isExportable(inspection)) {
+      return cleanedCandidate;
     }
   }
 
-  return { score: null, aiUsed, fallbackUsed };
+  return null;
 }
 
 function buildScoreGeometryBaseline(scores: readonly DebugUniqueScore[]): ScoreGeometryBaseline | null {
@@ -292,31 +251,6 @@ function validationDecisionIdentity(score: DebugUniqueScore): Pick<ExportValidat
   };
 }
 
-class GeminiExportScoreInspector implements ScoreInspector {
-  async inspect(score: DebugUniqueScore): Promise<ScoreInspectionResult> {
-    const settings = await readAiSettings();
-    if (!settings.enabled || (!settings.apiKey && !settings.proxyUrl)) {
-      throw new Error("AI export validator is not configured.");
-    }
-
-    const dataUrl = score.image.dataUrl;
-    if (!dataUrl) {
-      return { status: "contaminated", confidence: 1, reason: "missing image data", source: "ai" };
-    }
-
-    const requestBody = buildGeminiExportValidationRequest(dataUrl);
-    const response = settings.proxyUrl
-      ? await fetch(settings.proxyUrl, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ provider: "gemini", geminiRequest: requestBody, scoreId: score.id, clusterId: score.clusterId })
-        })
-      : await callGemini(settings, requestBody);
-
-    return parseAiInspectionResponse(response);
-  }
-}
-
 export class LocalExportScoreInspector implements ScoreInspector {
   async inspect(score: DebugUniqueScore): Promise<ScoreInspectionResult> {
     if (!score.image.dataUrl) {
@@ -416,84 +350,6 @@ function analyzePixels(data: Uint8ClampedArray, width: number, height: number): 
   };
 }
 
-async function callGemini(settings: ClaudeJudgeSettings, requestBody: unknown): Promise<Response> {
-  if (!(await chrome.permissions.contains({ origins: [GEMINI_API_PERMISSION] }))) {
-    throw new Error("Gemini host permission is not granted.");
-  }
-
-  return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-goog-api-key": settings.apiKey ?? ""
-    },
-    body: JSON.stringify(requestBody)
-  });
-}
-
-async function readAiSettings(): Promise<ClaudeJudgeSettings> {
-  const stored = await chrome.storage.local.get(CLAUDE_JUDGE_SETTINGS_KEY);
-  return normalizeClaudeJudgeSettings(stored[CLAUDE_JUDGE_SETTINGS_KEY] as Partial<ClaudeJudgeSettings> | undefined);
-}
-
-function buildGeminiExportValidationRequest(dataUrl: string): unknown {
-  const { mimeType, base64 } = splitDataUrl(dataUrl);
-  return {
-    contents: [{
-      role: "user",
-      parts: [
-        { text: EXPORT_VALIDATION_PROMPT },
-        { inline_data: { mime_type: mimeType, data: base64 } }
-      ]
-    }],
-    generationConfig: {
-      maxOutputTokens: 400,
-      responseMimeType: "application/json"
-    }
-  };
-}
-
-async function parseAiInspectionResponse(response: Response): Promise<ScoreInspectionResult> {
-  const body: unknown = await response.json();
-  if (!response.ok) {
-    throw new Error(`AI export validator HTTP ${response.status}`);
-  }
-
-  const parsed = isInspectionBody(body) ? body : JSON.parse(stripJsonFence(extractGeminiText(body)));
-  if (!isInspectionBody(parsed)) {
-    return { status: "uncertain", confidence: 0, reason: "invalid AI response", source: "ai" };
-  }
-
-  return {
-    status: parsed.status,
-    confidence: parsed.confidence,
-    reason: parsed.reason,
-    source: "ai"
-  };
-}
-
-function isInspectionBody(value: unknown): value is { status: ScoreInspectionStatus; confidence: number; reason: string } {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const body = value as { status?: unknown; confidence?: unknown; reason?: unknown };
-  return (
-    (body.status === "valid" || body.status === "contaminated" || body.status === "uncertain") &&
-    typeof body.confidence === "number" &&
-    typeof body.reason === "string"
-  );
-}
-
-function extractGeminiText(body: unknown): string {
-  const candidates = (body as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }).candidates ?? [];
-  return candidates[0]?.content?.parts?.find((part) => typeof part.text === "string")?.text ?? "{}";
-}
-
-function stripJsonFence(value: string): string {
-  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-}
-
 function splitDataUrl(dataUrl: string): { mimeType: string; base64: string } {
   const [header, payload] = dataUrl.split(",");
   const mimeType = /^data:([^;]+);base64$/.exec(header ?? "")?.[1] ?? "image/png";
@@ -509,17 +365,3 @@ function dataUrlToBlob(dataUrl: string): Blob {
   }
   return new Blob([bytes], { type: mimeType });
 }
-
-const EXPORT_VALIDATION_PROMPT = `You are the final visual quality validator for a sheet-music export pipeline.
-
-Classify the provided crop using this JSON schema:
-{
-  "status": "valid" | "contaminated" | "uncertain",
-  "confidence": 0.0,
-  "reason": "short reason"
-}
-
-Use "valid" only when the crop is readable sheet music or tab notation.
-Use "contaminated" when UI controls, subtitles, end-screen/profile layers, hover overlays, dark bars, hands, non-score content, or any layer covers enough notation to make the score unreliable.
-Use "uncertain" when the image is ambiguous.
-Do not transcribe or repair music. Return only JSON.`;

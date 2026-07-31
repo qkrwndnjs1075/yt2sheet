@@ -491,7 +491,7 @@ function exportCompleteStatus(response: Extract<ExportScoreCaptureResponse, { ok
 
 function reviewValidationStatus(validation: ExportValidationSummary): string {
   const validationText = validationChangeText(validation);
-  const source = validation.aiUsed ? (validation.fallbackUsed ? "AI/로컬 검토" : "AI 검토") : "로컬 검토";
+  const source = "로컬 검토";
   return validationText ? `${source} 완료: ${validationText}.` : `${source} 완료: 대체/제외 없이 내보낼 수 있습니다.`;
 }
 
@@ -502,8 +502,7 @@ function validationChangeText(validation: ExportValidationSummary): string {
 
   return [
     validation.replacedCount > 0 ? `대체 ${validation.replacedCount}개` : "",
-    validation.excludedCount > 0 ? `제외 ${validation.excludedCount}개` : "",
-    validation.fallbackUsed ? "로컬 검토 포함" : ""
+    validation.excludedCount > 0 ? `제외 ${validation.excludedCount}개` : ""
   ].filter(Boolean).join(", ");
 }
 
@@ -771,7 +770,7 @@ async function validateExportReview(sessionId: string, order: ReviewOrderPayload
   });
 
   if (!response?.ok) {
-    throw new Error(response?.error.message ?? "AI 최종 검토에 실패했습니다.");
+    throw new Error(response?.error.message ?? "최종 검토에 실패했습니다.");
   }
 
   return response;
@@ -1361,7 +1360,7 @@ function validationLabel(item: ReviewedScore): string {
 }
 
 function validationSourceLabel(validator: ReviewedScore["validator"]): string {
-  return validator === "ai" ? "AI 검토" : validator === "local" ? "로컬 검토" : "검토";
+  return validator === "local" ? "로컬 검토" : "검토";
 }
 
 function formatClock(value: number): string {

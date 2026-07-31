@@ -12,12 +12,6 @@
     "unlimitedStorage",
     "downloads"
   ],
-  "optional_host_permissions": [
-    "https://generativelanguage.googleapis.com/*",
-    "https://*/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
-  ],
   "background": {
     "service_worker": "src/background/index.js",
     "type": "module"

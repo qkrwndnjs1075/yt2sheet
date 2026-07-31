@@ -1,15 +1,7 @@
 import { DEBUG_CAPTURE_STATE_KEY, type DebugCaptureState } from "../shared/debug-state";
-import {
-  CLAUDE_JUDGE_SETTINGS_KEY,
-  defaultClaudeJudgeSettings,
-  GEMINI_API_PERMISSION,
-  normalizeClaudeJudgeSettings,
-  type ClaudeJudgeSettings
-} from "../shared/ai-judge-settings";
-import type { AiJudgeDebugInfo, FrameLayoutSummary, Rect } from "../shared/layout-types";
+import type { FrameLayoutSummary, Rect } from "../shared/layout-types";
 import type { RuntimeMessage } from "../shared/messages";
 import type { RoiIdentityDebugInfo } from "../shared/roi-types";
-import { proxyOriginPermissionPattern } from "../shared/extension-permissions";
 
 const app = document.querySelector<HTMLElement>("#app");
 
@@ -34,12 +26,7 @@ setInterval(() => {
 }, 1000);
 
 async function render(): Promise<void> {
-  if (isEditingAiSettings()) {
-    return;
-  }
-
   const state = await readDebugState();
-  const aiSettings = await readClaudeJudgeSettings();
   const session = state.currentSession ?? state.lastCompletedSession;
   const frames = [...state.recentFrames].reverse();
   const uniqueScores = state.uniqueScores ?? [];
@@ -75,11 +62,6 @@ async function render(): Promise<void> {
     </section>
 
     <section class="panel">
-      <h2>AI Judge Settings</h2>
-      ${aiSettingsHtml(aiSettings)}
-    </section>
-
-    <section class="panel">
       <h2>Last Error</h2>
       ${state.lastError ? `<pre>${escapeHtml(JSON.stringify(state.lastError, null, 2))}</pre>` : "<p>No error recorded.</p>"}
     </section>
@@ -91,7 +73,6 @@ async function render(): Promise<void> {
   document.querySelector("#refresh")?.addEventListener("click", () => {
     void render();
   });
-  installAiSettingsHandlers();
 }
 
 async function readDebugState(): Promise<DebugCaptureState> {
@@ -112,11 +93,6 @@ async function readDebugState(): Promise<DebugCaptureState> {
     lastError: state?.lastError ?? null,
     updatedAt: state?.updatedAt ?? new Date().toISOString()
   };
-}
-
-async function readClaudeJudgeSettings(): Promise<ClaudeJudgeSettings> {
-  const stored = await chrome.storage.local.get(CLAUDE_JUDGE_SETTINGS_KEY);
-  return normalizeClaudeJudgeSettings(stored[CLAUDE_JUDGE_SETTINGS_KEY] as Partial<ClaudeJudgeSettings> | undefined);
 }
 
 function sessionHtml(session: DebugCaptureState["currentSession"], active: boolean): string {
@@ -253,7 +229,6 @@ function layoutHtml(layout: FrameLayoutSummary | undefined): string {
       <dt>Systems</dt><dd>${layout.systems.map((system) => `${escapeHtml(system.kind)} ${rectLabel(system.rect)}`).join("<br>") || "-"}</dd>
       <dt>ROI</dt><dd>${layout.debug?.videoRoiRect ? rectLabel(layout.debug.videoRoiRect) : "-"}</dd>
       <dt>Failure</dt><dd>${escapeHtml(layout.debug?.failureReason ?? "-")}</dd>
-      <dt>AI Judge</dt><dd>${aiJudgeHtml(layout.debug?.aiJudge)}</dd>
       <dt>Scale</dt><dd>line gap ${formatNumber(layout.scale.estimatedStaffLineGap)}px, staff ${formatNumber(layout.scale.estimatedStaffHeight)}px</dd>
       <dt>Processing</dt><dd>${formatNumber(layout.debug?.processingTimeMs)}ms</dd>
     </dl>
@@ -274,45 +249,6 @@ function compactIdentityHtml(identity: RoiIdentityDebugInfo | undefined): string
   }
 
   return `${escapeHtml(identity.decision ?? identity.skippedReason ?? "-")} / clusters ${identity.clusterCount} / pending ${identity.pendingCount}`;
-}
-
-function aiSettingsHtml(settings: ClaudeJudgeSettings): string {
-  return `
-    <form id="ai-settings-form" class="ai-settings">
-      <label>
-        <input id="ai-enabled" type="checkbox" ${settings.enabled ? "checked" : ""} />
-        Enable Gemini Vision Judge
-      </label>
-      <label>
-        Model
-        <input id="ai-model" type="text" value="${escapeHtml(settings.model)}" autocomplete="off" />
-      </label>
-      <label>
-        Gemini API key
-        <input id="ai-api-key" type="password" placeholder="${settings.apiKey ? "available" : "not set"}" autocomplete="off" />
-      </label>
-      <label>
-        Proxy URL
-        <input id="ai-proxy-url" type="url" value="${escapeHtml(settings.proxyUrl ?? "")}" autocomplete="off" />
-      </label>
-      <div class="button-row">
-        <button type="submit">Save AI Judge</button>
-        <button id="clear-ai-key" type="button" class="secondary">Clear API Key</button>
-        <button id="reset-ai-settings" type="button" class="secondary">Reset AI Settings</button>
-      </div>
-    </form>
-  `;
-}
-
-function aiJudgeHtml(aiJudge: AiJudgeDebugInfo | undefined): string {
-  if (!aiJudge) {
-    return "-";
-  }
-
-  const status = aiJudge.called ? "called" : `skipped ${aiJudge.skippedReason ?? ""}`.trim();
-  const labels = aiJudge.results?.map((result) => `${result.candidateId}:${result.label} ${formatNumber(result.confidence)}`).join(", ") || "-";
-  const error = aiJudge.error ? ` / error ${escapeHtml(aiJudge.error)}` : "";
-  return `${escapeHtml(status)} / candidates ${aiJudge.contactSheetCandidateIds.length} / cache ${aiJudge.cacheHits.length}/${aiJudge.cacheMisses.length} / ${escapeHtml(labels)}${error}`;
 }
 
 function overlayHtml(frame: DebugCaptureState["recentFrames"][number]): string {
@@ -341,91 +277,6 @@ function boxHtml(kind: "proposal" | "weak" | "region" | "staff" | "system", rect
       <span>${escapeHtml(label)}</span>
     </span>
   `;
-}
-
-function installAiSettingsHandlers(): void {
-  document.querySelector("#ai-settings-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void saveClaudeJudgeSettings(false);
-  });
-  document.querySelector("#clear-ai-key")?.addEventListener("click", () => {
-    void saveClaudeJudgeSettings(true);
-  });
-  document.querySelector("#reset-ai-settings")?.addEventListener("click", () => {
-    void resetClaudeJudgeSettings();
-  });
-}
-
-async function saveClaudeJudgeSettings(clearKey: boolean): Promise<void> {
-  const current = await readClaudeJudgeSettings();
-  const apiKey = getInputValue("#ai-api-key").trim();
-  const proxyUrl = getInputValue("#ai-proxy-url").trim();
-  const model = getInputValue("#ai-model").trim() || defaultClaudeJudgeSettings().model;
-
-  if (proxyUrl && !(await ensureProxyHostPermission(proxyUrl))) {
-    window.alert("Proxy host permission was not granted. The proxy URL was not saved.");
-    return;
-  }
-
-  if (!proxyUrl && apiKey && !(await ensureGeminiHostPermission())) {
-    window.alert("Gemini host permission was not granted. The API key was not saved.");
-    return;
-  }
-
-  const next: ClaudeJudgeSettings = {
-    enabled: getChecked("#ai-enabled"),
-    model,
-    ...(proxyUrl ? { proxyUrl } : {})
-  };
-
-  if (!clearKey && apiKey) {
-    next.apiKey = apiKey;
-  } else if (!clearKey && current.apiKey) {
-    next.apiKey = current.apiKey;
-  }
-
-  await chrome.storage.local.set({ [CLAUDE_JUDGE_SETTINGS_KEY]: next });
-  await render();
-}
-
-async function resetClaudeJudgeSettings(): Promise<void> {
-  await chrome.storage.local.remove(CLAUDE_JUDGE_SETTINGS_KEY);
-  await render();
-}
-
-async function ensureProxyHostPermission(proxyUrl: string): Promise<boolean> {
-  const origin = proxyOriginPermissionPattern(proxyUrl);
-
-  if (!origin) {
-    return false;
-  }
-
-  if (await chrome.permissions.contains({ origins: [origin] })) {
-    return true;
-  }
-
-  return chrome.permissions.request({ origins: [origin] });
-}
-
-async function ensureGeminiHostPermission(): Promise<boolean> {
-  if (await chrome.permissions.contains({ origins: [GEMINI_API_PERMISSION] })) {
-    return true;
-  }
-
-  return chrome.permissions.request({ origins: [GEMINI_API_PERMISSION] });
-}
-
-function getInputValue(selector: string): string {
-  return document.querySelector<HTMLInputElement>(selector)?.value ?? "";
-}
-
-function getChecked(selector: string): boolean {
-  return document.querySelector<HTMLInputElement>(selector)?.checked ?? false;
-}
-
-function isEditingAiSettings(): boolean {
-  const active = document.activeElement;
-  return active instanceof HTMLElement && active.closest("#ai-settings-form") !== null;
 }
 
 function rectLabel(rect: Rect): string {

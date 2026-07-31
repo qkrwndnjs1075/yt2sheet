@@ -2,8 +2,7 @@
 import { captureError, toErrorMessage } from "../shared/errors";
 import { DEBUG_CAPTURE_STATE_KEY, type DebugCaptureState } from "../shared/debug-state";
 import { logger } from "../shared/logger";
-import { CLAUDE_JUDGE_SETTINGS_KEY, GEMINI_API_PERMISSION, normalizeClaudeJudgeSettings } from "../shared/ai-judge-settings";
-import type { CaptureCommandResponse, CheckGeminiHostPermissionResponse, DebugUniqueScore, ExportReviewDataResponse, ExportReviewValidationResponse, ExportScoreCaptureResponse, ExportValidationDetail, FrameMetaMessage, GetVideoSourceInfoResponse, PreviewScoreExportResponse, ReadAiJudgeSettingsResponse, RuntimeMessage, SelectScoreRoiResponse } from "../shared/messages";
+import type { CaptureCommandResponse, DebugUniqueScore, ExportReviewDataResponse, ExportReviewValidationResponse, ExportScoreCaptureResponse, ExportValidationDetail, FrameMetaMessage, GetVideoSourceInfoResponse, PreviewScoreExportResponse, RuntimeMessage, SelectScoreRoiResponse } from "../shared/messages";
 import { packScorePages } from "../shared/score-page-layout";
 import { SCORE_IDENTITY_CONFIG } from "../shared/score-identity-config";
 import { DEFAULT_SAMPLE_INTERVAL_MS, type CaptureError, type CaptureSession } from "../shared/types";
@@ -11,7 +10,7 @@ import { isYouTubeWatchUrl } from "../shared/youtube";
 import { OffscreenManager } from "./offscreen-manager";
 import { CaptureImageStorage } from "./capture-image-storage";
 import { blobToDataUrl, exportApprovedPreviewAsPdf, exportScoresAsPngPages, previewPageBlobs, safeFileBaseName, type ScoreExportOptions } from "./score-export-download";
-import { createDefaultAiExportScoreInspector, validateExportScores } from "./export-score-validator";
+import { validateExportScores } from "./export-score-validator";
 import { SessionManager } from "./session-manager";
 import { getTabMediaStreamId } from "./tab-capture";
 
@@ -31,16 +30,6 @@ chrome.action.onClicked.addListener((tab) => {
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
   if (message.type === "GET_DEBUG_CAPTURE_STATE") {
     void readDebugState().then(sendResponse);
-    return true;
-  }
-
-  if (message.type === "CHECK_GEMINI_HOST_PERMISSION") {
-    void checkGeminiHostPermission().then(sendResponse);
-    return true;
-  }
-
-  if (message.type === "READ_AI_JUDGE_SETTINGS") {
-    void readAiJudgeSettings().then(sendResponse);
     return true;
   }
 
@@ -226,21 +215,6 @@ async function sendStartCapture(session: CaptureSession, streamId: string): Prom
   } catch (error) {
     return { ok: false, error: normalizeCaptureError(error, session.id) };
   }
-}
-
-async function checkGeminiHostPermission(): Promise<CheckGeminiHostPermissionResponse> {
-  return {
-    ok: true,
-    granted: await chrome.permissions.contains({ origins: [GEMINI_API_PERMISSION] })
-  };
-}
-
-async function readAiJudgeSettings(): Promise<ReadAiJudgeSettingsResponse> {
-  const stored = await chrome.storage.local.get(CLAUDE_JUDGE_SETTINGS_KEY);
-  return {
-    ok: true,
-    settings: normalizeClaudeJudgeSettings(stored[CLAUDE_JUDGE_SETTINGS_KEY])
-  };
 }
 
 async function handleRuntimeMessage(message: RuntimeMessage): Promise<void> {
@@ -526,8 +500,7 @@ async function validateExportReview(
     const validation = await validateExportScores(reviewScores, {
       occurrenceOrder: message.occurrenceOrder,
       scoreOrder: message.scoreOrder,
-      candidates: state.exportCandidates,
-      aiInspector: createDefaultAiExportScoreInspector()
+      candidates: state.exportCandidates
     });
 
     return { ok: true, validation: validation.summary, validationDetails: validation.decisions };
@@ -558,8 +531,7 @@ async function previewScoreExport(
     const validation = await validateExportScores(reviewScores, {
       occurrenceOrder: message.occurrenceOrder,
       scoreOrder: message.scoreOrder,
-      candidates: state.exportCandidates,
-      aiInspector: createDefaultAiExportScoreInspector()
+      candidates: state.exportCandidates
     });
     const validatedScores = validation.scores;
     const exportOptions = buildValidatedExportOptions(validatedScores, validation.decisions);

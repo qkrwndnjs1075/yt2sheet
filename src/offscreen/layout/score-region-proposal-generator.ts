@@ -105,7 +105,6 @@ export class ScoreRegionProposalGenerator {
       },
       finalScores: {
         ruleScore: scores.finalScore,
-        aiScore: 0,
         temporalStabilityScore: 0,
         finalScore: scores.finalScore
       },

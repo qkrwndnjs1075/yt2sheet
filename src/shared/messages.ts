@@ -1,4 +1,3 @@
-import type { ClaudeJudgeSettings } from "./ai-judge-settings";
 import type { CapturedScoreSystem } from "./capture-types";
 import type { CaptureError, CaptureSession, VideoElementRect, VideoSourceInfo, ViewportInfo } from "./types";
 import type { FrameLayoutSummary } from "./layout-types";
@@ -53,8 +52,6 @@ export type VideoProbeTick = {
 export type RuntimeMessage =
   | { type: "GET_VIDEO_SOURCE_INFO" }
   | { type: "GET_DEBUG_CAPTURE_STATE" }
-  | { type: "CHECK_GEMINI_HOST_PERMISSION" }
-  | { type: "READ_AI_JUDGE_SETTINGS" }
   | { type: "GET_EXPORT_REVIEW_DATA"; sessionId: string }
   | { type: "VALIDATE_EXPORT_REVIEW"; sessionId: string; occurrenceOrder?: string[]; scoreOrder?: string[] }
   | { type: "PREVIEW_SCORE_EXPORT"; sessionId: string; occurrenceOrder?: string[]; scoreOrder?: string[] }
@@ -80,16 +77,6 @@ export type GetVideoSourceInfoResponse =
 export type CaptureCommandResponse =
   | { ok: true }
   | { ok: false; error: CaptureError };
-
-export type CheckGeminiHostPermissionResponse = {
-  ok: true;
-  granted: boolean;
-};
-
-export type ReadAiJudgeSettingsResponse = {
-  ok: true;
-  settings: ClaudeJudgeSettings;
-};
 
 export type SelectScoreRoiResponse =
   | { ok: true; roiConfig: ScoreRoiConfig }
@@ -126,8 +113,6 @@ export type ExportValidationSummary = {
   keptCount: number;
   replacedCount: number;
   excludedCount: number;
-  aiUsed: boolean;
-  fallbackUsed: boolean;
   notes: string[];
 };
 
@@ -139,5 +124,5 @@ export type ExportValidationDetail = {
   action: "kept" | "replaced" | "excluded";
   reason: string;
   replacementScoreId?: string;
-  validator: "ai" | "local";
+  validator: "local";
 };

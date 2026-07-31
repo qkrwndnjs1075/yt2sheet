@@ -10,7 +10,6 @@ import { ScorePngExporter } from "../src/offscreen/export/score-png-exporter.js"
 import { ScoreIdentityDetector } from "../src/offscreen/identity/score-identity-detector.js";
 import { ScoreClusterer } from "../src/offscreen/identity/score-clusterer.js";
 import { chunkScorePages } from "../src/background/score-export-download.js";
-import { FEATURE_FLAGS } from "../src/shared/feature-flags.js";
 import { SCORE_IDENTITY_CONFIG } from "../src/shared/score-identity-config.js";
 import type { CapturedScoreSystem, CaptureContext } from "../src/shared/capture-types.js";
 import type { ScoreCluster } from "../src/shared/cluster-types.js";
@@ -27,9 +26,6 @@ const ONE_BY_ONE_PNG = Uint8Array.from([
 
 test("score identity config and feature flags enforce ROI-only local identity", () => {
   assert.equal(SCORE_IDENTITY_CONFIG.sampling.sampleIntervalMs, 1000);
-  assert.equal(FEATURE_FLAGS.useGeminiJudge, false);
-  assert.equal(FEATURE_FLAGS.useAutoScoreRegionDetection, false);
-  assert.equal(FEATURE_FLAGS.useManualRoiOnly, true);
 });
 
 test("clusterer stores the actual representative image blob id", () => {
