@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("installer surfaces staged progress and the Windows shell boundary", async () => {
+test("raw PowerShell installer is pipe-safe and surfaces staged progress", async () => {
   const [powershell, shell, readme] = await Promise.all([
     readFile("scripts/install.ps1", "utf8"),
     readFile("scripts/install.sh", "utf8"),
     readFile("README.md", "utf8")
   ]);
 
-  assert.equal(powershell.charCodeAt(0), 0xFEFF, "Windows PowerShell installer must declare UTF-8 encoding");
+  assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
+  assert.match(powershell, /"cli-v0\.2\.1"/, "the raw installer must default to the latest published CLI release");
+  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.1/, "the Unix installer must default to the same latest CLI release");
   assert.match(powershell, /### \[\{0\}\/\{1\}\]/);
   assert.match(shell, /### \[%s\/%s\]/);
   assert.match(powershell, /SetEnvironmentVariable\("Path",/);
