@@ -1328,6 +1328,13 @@
 ## Plan
 
 - [x] Connect to the user's authenticated Chrome Render dashboard.
-- [ ] Confirm the GitHub remote contains the current standalone Docker deployment code.
+- [x] Confirm the GitHub remote contains the current standalone Docker deployment code.
 - [ ] Create the Render Docker Web Service and configure the health check.
 - [ ] Verify the deployed URL and `/api/health`.
+
+## Review
+
+- `npm run verify` passed: typecheck, 317 tests, standalone web build, and extension build.
+- Deployment implementation was committed as `cb48188` (`feat(deploy): run web and API in one container`) and pushed to `origin/main`.
+- The local worktree and remote `main` both resolve to `cb481882a9bac2d6b72c67fc0d05fb0e9319b1ba`.
+- Render service creation and public health-check verification remain pending for the next deployment step.
