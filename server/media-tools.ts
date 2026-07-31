@@ -5,12 +5,19 @@ export type MediaTools = {
   readonly ytDlp: string;
   readonly ffmpeg: string;
   readonly ffprobe: string;
+  readonly ytDlpJsRuntime?: string;
+  readonly ytDlpCookiesPath?: string;
 };
+
+const defaultYtDlpJsRuntime = process.env.YT_DLP_JS_RUNTIME?.trim() || "node";
+const defaultYtDlpCookiesPath = process.env.YT_DLP_COOKIES_PATH?.trim();
 
 export const defaultMediaTools: MediaTools = {
   ytDlp: process.env.YT_DLP_PATH?.trim() || "yt-dlp",
   ffmpeg: process.env.FFMPEG_PATH?.trim() || "ffmpeg",
-  ffprobe: process.env.FFPROBE_PATH?.trim() || "ffprobe"
+  ffprobe: process.env.FFPROBE_PATH?.trim() || "ffprobe",
+  ytDlpJsRuntime: defaultYtDlpJsRuntime,
+  ...(defaultYtDlpCookiesPath ? { ytDlpCookiesPath: defaultYtDlpCookiesPath } : {})
 };
 
 export type RunOptions = {

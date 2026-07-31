@@ -1340,7 +1340,35 @@
 - Render redeploy at `af06c5b` is live in Singapore on the Free plan at [https://yt2sheet.onrender.com](https://yt2sheet.onrender.com). Logs show `host: 0.0.0.0`, `port: 10000`, and `Your service is live`.
 - Manual public checks passed: Chrome rendered the landing page; the JS asset returned HTTP 200 with 105787 bytes; `/api/health` returned HTTP 200 and `{\"status\":\"ok\"}`. Direct health navigation in Chrome was blocked by the local client, so the endpoint response was verified with curl.
 - Free Render instances can sleep and have ephemeral local storage; generated files are not durable across restarts.
-- `npm run verify` passed: typecheck, 317 tests, standalone web build, and extension build.
-- Deployment implementation was committed as `cb48188` (`feat(deploy): run web and API in one container`) and pushed to `origin/main`.
-- The local worktree and remote `main` both resolve to `cb481882a9bac2d6b72c67fc0d05fb0e9319b1ba`.
-- Render service creation and public health-check verification remain pending for the next deployment step.
+
+# G057 YouTube downloader runtime and anti-bot handling (2026-07-31)
+
+## Plan
+
+- [x] Reproduce the Render failure as downloader and Docker runtime regressions.
+- [x] Enable yt-dlp EJS through the Node runtime and optional private cookies path.
+- [x] Classify YouTube 429 bot challenges without blind retries.
+- [x] Run focused tests, full verification, and a same-link local yt-dlp metadata smoke check.
+
+## Review
+
+- Docker now installs `yt-dlp[default]` and sets `YT_DLP_JS_RUNTIME=node`; server calls forward `--js-runtimes` and optional `--cookies` flags.
+- `YT_DLP_COOKIES_PATH` supports a private Netscape-format cookie file; Render Docker secret files are available under `/etc/secrets/`.
+- HTTP 429 or `Sign in to confirm you're not a bot` now becomes `YOUTUBE_ACCESS_BLOCKED` instead of generic `MEDIA_PROCESSING_FAILED`; HTTP 403 keeps the existing one-time player-JavaScript fallback.
+- `npm run verify` passed typecheck, 320 tests, standalone web build, and extension build. `git diff --check` is clean.
+- Local same-link metadata smoke with `yt-dlp --js-runtimes node` returned duration `242`; the Render service was not redeployed in this code-only request, and no cookies were added.
+- The provided no-excuse audit could not run because the project TypeScript installation does not expose `typescript/unstable/async`; `tsc` typecheck passed.
+
+# G058 Render stale-image diagnosis (2026-07-31)
+
+## Plan
+
+- [x] Capture the repeated production signature and compare local, remote, and deployed-source boundaries.
+- [x] Prove the current source assembles the Node runtime flags and retain a focused regression test.
+- [x] Verify the current Docker runtime contract and same-link local API path.
+- [x] Reconcile the task record and remove all temporary debug artifacts.
+
+## Review
+
+- The repeated Render log is from the pre-fix image: `origin/main` and local `HEAD` are still `e6038c0`, while the yt-dlp runtime fix remains uncommitted in the working tree.
+- Before the user-authorized commit/push, `origin/main` was still `e6038c0`; the source fix is now ready for Render to rebuild from the pushed commit.

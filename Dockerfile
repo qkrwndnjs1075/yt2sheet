@@ -14,11 +14,12 @@ ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV YT2SHEET_WEB_ROOT=/app/dist-web
 ENV YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
+ENV YT_DLP_JS_RUNTIME=node
 
 RUN apt-get update \
   && apt-get install --no-install-recommends -y ca-certificates ffmpeg python3 python3-venv \
   && python3 -m venv /opt/yt-dlp \
-  && /opt/yt-dlp/bin/pip install --no-cache-dir yt-dlp \
+  && /opt/yt-dlp/bin/pip install --no-cache-dir "yt-dlp[default]" \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 

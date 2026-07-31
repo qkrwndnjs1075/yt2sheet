@@ -38,6 +38,7 @@
 - When a user identifies a numbered missing score in a supplied PDF, treat the artifact's sequential notation order as the source of truth. Do not dismiss the report from server score counts or hash-cluster telemetry; inspect the exact PDF and map the claimed position to source-frame intervals before deciding there is no defect.
 - When a user reports repeated score sheets, do not raise a whole-image hash threshold alone. Confirm the actual accepted-frame sequence, then combine a staff-line-suppressed notation-overlap signal with stable staff geometry so playback overlays collapse without merging distinct score systems that merely share musical shapes or use different staff spacing.
 - When a YouTube job reports `MEDIA_PROCESSING_FAILED`, inspect the underlying media-stage error before changing score detection. For a confirmed HTTP 403, retry one bounded alternate player path with a clean partial-download restart; do not turn arbitrary downloader failures into blind retries.
+- When a production log still contains the exact pre-fix signature, verify the deployed commit against `origin/main` before treating source changes as live. An uncommitted working-tree fix cannot affect Render; record deployment state separately from code/test state.
 # 2026-07-24 - Keep PDF output singular unless formats are explicitly requested
 
 - A research-backed optional format is not automatically a product requirement. Do not surface A4/Letter/legacy choices unless the user explicitly asks for selectable formats.

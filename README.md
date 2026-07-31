@@ -80,7 +80,12 @@ workspace and generated results across container restarts. The backend still
 uses one in-memory job queue and should run as one instance.
 
 Useful environment variables are `HOST`, `PORT`, `YT2SHEET_WEB_ROOT`,
-`YT2SHEET_DATA_ROOT`, `YT_DLP_PATH`, `FFMPEG_PATH`, and `FFPROBE_PATH`.
+`YT2SHEET_DATA_ROOT`, `YT_DLP_PATH`, `YT_DLP_JS_RUNTIME`, `YT_DLP_COOKIES_PATH`,
+`FFMPEG_PATH`, and `FFPROBE_PATH`. `YT_DLP_JS_RUNTIME` defaults to `node`.
+`YT_DLP_COOKIES_PATH` is optional and must point to a private Netscape-format
+YouTube cookies file; never commit or log that file. YouTube may still reject
+cloud-hosted requests even when the JavaScript runtime is configured.
+For a Render Docker secret file, use `YT_DLP_COOKIES_PATH=/etc/secrets/youtube-cookies.txt`.
 
 ## Current Detector Ceilings
 

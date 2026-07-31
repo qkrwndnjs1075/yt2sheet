@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { createScoreExtractionQualityReport, deriveScoreQualitySidecarPath, type ScoreExtractionQualityReport } from "../server/score-quality-report";
-import type { ScoreJobProcessorContext } from "../server/score-job-service";
+import { ScorePipelineError, type ScoreJobProcessorContext } from "../server/score-job-service";
 import { buildFrameExtractionArguments, buildVideoDownloadArguments, YouTubeScoreProcessor } from "../server/youtube-score-processor";
 
 describe("YouTube score frame extraction", () => {
@@ -21,6 +21,14 @@ describe("YouTube score frame extraction", () => {
     const args = buildVideoDownloadArguments("https://www.youtube.com/watch?v=video-id", "work", "ffmpeg");
 
     assert.equal(args.includes("--ffmpeg-location"), false);
+  });
+
+  it("enables the Node JavaScript runtime for yt-dlp extraction", () => {
+    const args = buildVideoDownloadArguments("https://www.youtube.com/watch?v=video-id", "work", "ffmpeg", {
+      ytDlpCookiesPath: "/run/secrets/youtube-cookies.txt"
+    });
+
+    assert.deepEqual(args.slice(0, 4), ["--js-runtimes", "node", "--cookies", "/run/secrets/youtube-cookies.txt"]);
   });
 
   it("keeps native frame resolution and samples a short video every half second", () => {
@@ -90,6 +98,30 @@ describe("YouTube score cancellation", () => {
 
     await assert.rejects(processor.process(jobInput(), createContext(new AbortController().signal)), {
       code: "MEDIA_PROCESSING_FAILED"
+    });
+    assert.equal(downloadAttempts, 1);
+  });
+
+  it("surfaces a YouTube 429 bot challenge without retrying it", async (t) => {
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-429-");
+    let downloadAttempts = 0;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "60";
+        if (executable === "yt-dlp-test") {
+          downloadAttempts += 1;
+          throw new Error("yt-dlp failed: HTTP Error 429: Too Many Requests\nSign in to confirm you're not a bot");
+        }
+        return "";
+      }
+    });
+
+    await assert.rejects(processor.process(jobInput(), createContext(new AbortController().signal)), (error: unknown) => {
+      return error instanceof ScorePipelineError
+        && error.code === "YOUTUBE_ACCESS_BLOCKED"
+        && /차단/.test(error.publicMessage);
     });
     assert.equal(downloadAttempts, 1);
   });

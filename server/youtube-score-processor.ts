@@ -134,23 +134,37 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
   }
 
   private async readRemoteDuration(videoUrl: string, signal: AbortSignal): Promise<number> {
-    const output = await this.processRunner(this.tools.ytDlp, ["--no-playlist", "--skip-download", "--print", "%(duration)s", videoUrl], { signal });
+    const output = await this.runYtDlp([
+      ...buildYtDlpRuntimeArguments(this.tools),
+      "--no-playlist", "--skip-download", "--print", "%(duration)s", videoUrl
+    ], signal);
     const duration = Number(output.trim().split(/\r?\n/).at(-1));
     this.assertDuration(duration);
     return duration;
   }
 
   private async downloadVideo(videoId: string, videoUrl: string, workDirectory: string, signal: AbortSignal): Promise<string> {
+    const downloaderOptions: VideoDownloadOptions = {
+      ytDlpJsRuntime: this.tools.ytDlpJsRuntime,
+      ytDlpCookiesPath: this.tools.ytDlpCookiesPath
+    };
     let output: string;
     try {
-      output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg), { signal });
+      output = await this.runYtDlp(
+        buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg, downloaderOptions),
+        signal
+      );
     } catch (error) {
       if (!isYouTubeDownloadForbidden(error)) throw error;
       logger.warn({ videoId }, "retrying YouTube download with current player JavaScript");
-      output = await this.processRunner(this.tools.ytDlp, buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg, {
-        useCurrentPlayerJavaScript: true,
-        restartDownload: true
-      }), { signal });
+      output = await this.runYtDlp(
+        buildVideoDownloadArguments(videoUrl, workDirectory, this.tools.ffmpeg, {
+          ...downloaderOptions,
+          useCurrentPlayerJavaScript: true,
+          restartDownload: true
+        }),
+        signal
+      );
     }
     const reportedPath = output.trim().split(/\r?\n/).filter(Boolean).at(-1);
     if (!reportedPath) {
@@ -162,6 +176,14 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       throw new ScorePipelineError("DOWNLOAD_FAILED", "다운로드된 영상 경로를 확인할 수 없습니다.");
     }
     return absolutePath;
+  }
+
+  private async runYtDlp(args: readonly string[], signal: AbortSignal): Promise<string> {
+    try {
+      return await this.processRunner(this.tools.ytDlp, args, { signal });
+    } catch (error) {
+      throw toYouTubeAccessBlockedError(error) ?? error;
+    }
   }
 
   private async readLocalDuration(videoPath: string, signal: AbortSignal): Promise<number> {
@@ -212,6 +234,8 @@ function throwIfCancelled(signal: AbortSignal): void {
 type VideoDownloadOptions = {
   readonly useCurrentPlayerJavaScript?: boolean;
   readonly restartDownload?: boolean;
+  readonly ytDlpJsRuntime?: string;
+  readonly ytDlpCookiesPath?: string;
 };
 
 export function buildVideoDownloadArguments(
@@ -224,6 +248,7 @@ export function buildVideoDownloadArguments(
     ? ["--ffmpeg-location", ffmpegPath]
     : [];
   return [
+    ...buildYtDlpRuntimeArguments(options),
     "--no-playlist", "--no-progress", "--max-filesize", "2G",
     "-f", "bv*[height<=1080]+ba/b[height<=1080]/best",
     ...(options.useCurrentPlayerJavaScript ? ["--extractor-args", "youtube:player_js_version=actual"] : []),
@@ -236,6 +261,26 @@ export function buildVideoDownloadArguments(
 
 function isYouTubeDownloadForbidden(error: unknown): boolean {
   return error instanceof Error && /HTTP Error 403: Forbidden/i.test(error.message);
+}
+
+function buildYtDlpRuntimeArguments(options: Pick<VideoDownloadOptions, "ytDlpJsRuntime" | "ytDlpCookiesPath">): string[] {
+  const jsRuntime = options.ytDlpJsRuntime?.trim() || "node";
+  const cookiesPath = options.ytDlpCookiesPath?.trim();
+  return [
+    "--js-runtimes", jsRuntime,
+    ...(cookiesPath ? ["--cookies", cookiesPath] : [])
+  ];
+}
+
+function toYouTubeAccessBlockedError(error: unknown): ScorePipelineError | null {
+  if (!(error instanceof Error) || !/HTTP Error 429: Too Many Requests|Sign in to confirm[\s\S]*not a bot/i.test(error.message)) {
+    return null;
+  }
+  return new ScorePipelineError(
+    "YOUTUBE_ACCESS_BLOCKED",
+    "YouTube가 서버 요청을 봇으로 차단했습니다. 인증 쿠키를 설정하거나 잠시 후 다시 시도해 주세요.",
+    { cause: error }
+  );
 }
 
 function isFileSystemError(error: unknown): boolean {

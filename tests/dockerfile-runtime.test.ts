@@ -13,5 +13,15 @@ describe("runtime Docker image", () => {
       /RUN npm ci --include=dev\b/,
       "the runtime image must install tsx from devDependencies for start:server"
     );
+    assert.match(
+      runtimeStage,
+      /pip install --no-cache-dir ["']yt-dlp\[default\]["']/,
+      "the runtime image must install yt-dlp EJS dependencies"
+    );
+    assert.match(
+      runtimeStage,
+      /ENV YT_DLP_JS_RUNTIME=node\b/,
+      "the runtime image must enable Node for yt-dlp JavaScript challenges"
+    );
   });
 });
