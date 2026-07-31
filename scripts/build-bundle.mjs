@@ -68,11 +68,20 @@ exec "$root/runtime/bin/node" "$root/app/dist-cli/cli/index.js" "$@"
 
 function windowsLauncher() {
   return `@echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 set "YT2SHEET_ROOT=%~dp0.."
 set "YT_DLP_PATH=%YT2SHEET_ROOT%\\tools\\yt-dlp.exe"
+if /I "%~1"=="uninstall" if "%~2"=="" goto uninstall
 "%YT2SHEET_ROOT%\\runtime\\node.exe" "%YT2SHEET_ROOT%\\app\\dist-cli\\cli\\index.js" %*
 exit /b %ERRORLEVEL%
+
+:uninstall
+set "YT2SHEET_UNINSTALL_HANDOFF=launcher"
+"%YT2SHEET_ROOT%\\runtime\\node.exe" "%YT2SHEET_ROOT%\\app\\dist-cli\\cli\\index.js" %*
+set "YT2_UNINSTALL_EXIT=!ERRORLEVEL!"
+if not "!YT2_UNINSTALL_EXIT!"=="0" exit /b !YT2_UNINSTALL_EXIT!
+start "" /b powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "$root = [Environment]::GetEnvironmentVariable('YT2SHEET_ROOT', 'Process'); Start-Sleep -Milliseconds 250; for ($attempt = 0; $attempt -lt 120 -and (Test-Path -LiteralPath $root); $attempt++) { try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 50 } }"
+exit /b 0
 `;
 }
 

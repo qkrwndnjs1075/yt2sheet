@@ -1,9 +1,19 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { lstat, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CliUninstallOptions } from "./uninstall";
+
+export async function removeStandaloneArtifacts(root: string, options: CliUninstallOptions): Promise<void> {
+  if (options.platform === "win32") {
+    await removeWindowsPathEntry(join(root, "bin"), options.environment);
+    if (options.environment.YT2SHEET_UNINSTALL_HANDOFF !== "launcher") {
+      await rm(root, { recursive: true, force: true });
+    }
+    return;
+  }
+
+  await removeUnixArtifacts(root, options);
+}
 
 export async function removeUnixArtifacts(root: string, options: CliUninstallOptions): Promise<void> {
   const profiles = profilePaths(options);
@@ -28,64 +38,45 @@ export async function removeUnixArtifacts(root: string, options: CliUninstallOpt
   await rm(root, { recursive: true, force: true });
 }
 
-export async function scheduleWindowsCleanup(root: string, environment: NodeJS.ProcessEnv): Promise<void> {
-  const scriptPath = join(tmpdir(), `yt2sheet-uninstall-${randomUUID()}.ps1`);
-  await writeFile(scriptPath, buildWindowsCleanupScript(), "utf8");
-
-  try {
-    await new Promise<void>((resolveDone, rejectDone) => {
-      try {
-        const child = spawn(
-          "cmd.exe",
-          [
-            "/d",
-            "/c",
-            "start",
-            "\"\"",
-            "/b",
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-File",
-            scriptPath
-          ],
-          {
-            detached: true,
-            windowsHide: true,
-            stdio: "ignore",
-            env: {
-              ...environment,
-              YT2SHEET_UNINSTALL_ROOT: root
-            }
-          }
-        );
-        child.once("error", rejectDone);
-        child.once("spawn", () => {
-          child.unref();
-          resolveDone();
-        });
-      } catch (error: unknown) {
-        rejectDone(error);
+async function removeWindowsPathEntry(binDirectory: string, environment: NodeJS.ProcessEnv): Promise<void> {
+  const child = spawn(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", buildWindowsPathCleanupCommand()],
+    {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: {
+        ...environment,
+        YT2SHEET_UNINSTALL_BIN: binDirectory
       }
+    }
+  );
+  let stderr = "";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+
+  await new Promise<void>((resolveDone, rejectDone) => {
+    child.once("error", rejectDone);
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolveDone();
+        return;
+      }
+      const details = stderr.trim();
+      rejectDone(new Error(`Windows PATH cleanup failed with exit code ${String(code)}${details ? `: ${details}` : ""}`));
     });
-  } catch (error: unknown) {
-    await rm(scriptPath, { force: true });
-    throw error;
-  }
+  });
 }
 
-function buildWindowsCleanupScript(): string {
+function buildWindowsPathCleanupCommand(): string {
   return [
-    "$root = [Environment]::GetEnvironmentVariable('YT2SHEET_UNINSTALL_ROOT', 'Process')",
-    "$bin = [System.IO.Path]::Combine($root, 'bin')",
-    "Start-Sleep -Milliseconds 500",
+    "$bin = [Environment]::GetEnvironmentVariable('YT2SHEET_UNINSTALL_BIN', 'Process')",
+    "if ([string]::IsNullOrWhiteSpace($bin)) { throw 'Standalone bin path is missing.' }",
     "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')",
-    "if ($null -ne $userPath) { $pathEntries = @($userPath -split ';' | Where-Object { $_ }); $entries = @($pathEntries | Where-Object { $_.Trim().TrimEnd([char]92) -ine $bin.TrimEnd([char]92) }); if ($entries.Count -ne $pathEntries.Count) { [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User') } }",
-    "$attempt = 0",
-    "try { while ((Test-Path -LiteralPath $root) -and $attempt -lt 120) { try { $quotedRoot = '\"' + $root + '\"'; & cmd.exe /d /c \"rmdir /s /q $quotedRoot\"; if ($LASTEXITCODE -ne 0) { throw \"rmdir exited with code $LASTEXITCODE\" } } catch { Start-Sleep -Milliseconds 250; $attempt += 1 } } } finally { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue }"
-  ].join("\r\n");
+    "if (-not [string]::IsNullOrWhiteSpace($userPath)) { $entries = @($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }); $retained = @($entries | Where-Object { $_.TrimEnd([char]92) -ine $bin.TrimEnd([char]92) }); if ($retained.Count -ne $entries.Count) { [Environment]::SetEnvironmentVariable('Path', ($retained -join ';'), 'User') } }"
+  ].join(";");
 }
 
 function profilePaths(options: CliUninstallOptions): readonly string[] {

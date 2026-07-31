@@ -68,3 +68,27 @@
 # 2026-07-31 - Use a command bootstrapper when the user wants OMO-style installation
 
 - If the desired experience is one pasted command rather than npm, host signed OS-aware installer scripts that download prebuilt `yt2` artifacts and register the command; the command must bundle its own runtime and must not require Node.js first.
+
+# 2026-07-31 - Remove dormant integrations from a local-only product path
+
+- A disabled feature flag does not make an integration absent. When the product is explicitly local-only, remove its settings, network calls, permissions, runtime messages, debug controls, and tests, then verify the remaining source has no live references.
+
+# 2026-07-31 - Keep a user-facing README limited to the requested path
+
+- When the user asks for only service identity and installation, omit implementation details, test commands, developer package instructions, troubleshooting, and auxiliary CLI help from the README.
+
+- When the user narrows that request to installation only, remove the service description and post-install usage as well.
+
+- When the user says the README is too brief, restore a plain-language service description and first-use example, while keeping developer and test instructions out.
+
+# 2026-07-31 - Keep raw PowerShell `irm | iex` installers BOM-free
+
+- A UTF-8 BOM is consumed as file-encoding metadata only when PowerShell opens a file. In a raw HTTP string piped to `Invoke-Expression`, it becomes a leading `U+FEFF` character, changes `param` into an unknown command, and can still allow the remaining installer to continue. Keep the public pipe target BOM-free, regression-test its first code point, and keep all OS installers pointed at the latest published tag.
+
+# 2026-07-31 - Avoid `Invoke-WebRequest` for large GitHub Release assets in PowerShell 5.1
+
+- A successful first progress line does not prove the installer downloader works: PowerShell 5.1 can terminate mid-transfer and leave a partial archive. Use a .NET `WebClient` transfer for the standalone archive, keep checksum verification, and prove the raw `irm | iex` path completes all stages against the published asset.
+
+# 2026-07-31 - Release every distribution-facing push
+
+- When a pushed change affects an installer, packaged CLI, or release artifact, create the matching patch release in the same delivery flow: version and lockfile, installer default tags, commit, push, annotated tag, GitHub Release workflow, artifact checksums, and public installation verification.

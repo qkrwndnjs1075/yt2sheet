@@ -1,7 +1,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { removeUnixArtifacts, scheduleWindowsCleanup } from "./uninstall-cleanup";
+import { removeStandaloneArtifacts } from "./uninstall-cleanup";
 
 export type CliUninstallOptions = Readonly<{
   readonly entryPoint: string;
@@ -25,12 +25,7 @@ export async function uninstallStandaloneCli(
     return { kind: "npm", command: npmUninstallCommand };
   }
 
-  if (options.platform === "win32") {
-    await scheduleWindowsCleanup(installRoot, options.environment);
-    return { kind: "removed", installRoot, deferred: true };
-  }
-
-  await removeUnixArtifacts(installRoot, options);
+  await removeStandaloneArtifacts(installRoot, options);
   return { kind: "removed", installRoot, deferred: false };
 }
 

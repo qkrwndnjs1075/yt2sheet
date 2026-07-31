@@ -7,14 +7,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
-  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.2" } else { $env:YT2SHEET_RELEASE_TAG }
+  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.3" } else { $env:YT2SHEET_RELEASE_TAG }
 }
 if ([string]::IsNullOrWhiteSpace($Repository)) {
   $Repository = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_REPOSITORY)) { "qkrwndnjs1075/yt2sheet" } else { $env:YT2SHEET_REPOSITORY }
 }
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+  $localAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA", "Process")
   $InstallRoot = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_INSTALL_ROOT)) {
-    Join-Path $env:LOCALAPPDATA "yt2sheet"
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+      throw "LOCALAPPDATA is not available. Pass -InstallRoot or set YT2SHEET_INSTALL_ROOT."
+    }
+    Join-Path $localAppData "yt2sheet"
   } else {
     $env:YT2SHEET_INSTALL_ROOT
   }
@@ -32,6 +36,9 @@ $baseUrl = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_BASE_URL)) {
 } else {
   $env:YT2SHEET_RELEASE_BASE_URL
 }
+if ([string]::IsNullOrWhiteSpace($baseUrl)) {
+  throw "Release download URL is empty. Set YT2SHEET_RELEASE_BASE_URL or provide a repository and release tag."
+}
 $baseUrl = $baseUrl.TrimEnd("/")
 $totalSteps = 7
 $currentStep = 0
@@ -48,12 +55,18 @@ function Download-InstallFile {
     [string]$Destination
   )
 
-  $client = New-Object System.Net.WebClient
+  $client = $null
   try {
+    $client = New-Object System.Net.WebClient
+    if ($null -eq $client) {
+      throw "Unable to create the Windows download client."
+    }
     $client.DownloadFile($Uri, $Destination)
   }
   finally {
-    $client.Dispose()
+    if ($null -ne $client) {
+      $client.Dispose()
+    }
   }
 }
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("yt2sheet-install-" + [guid]::NewGuid().ToString("N"))

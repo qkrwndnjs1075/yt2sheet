@@ -1,5 +1,51 @@
 # ROI Score Export Pipeline
 
+# G070 Immediate Windows uninstall and PowerShell bootstrap repair (2026-07-31)
+
+## Plan
+
+- [x] Capture a failing-first Windows uninstall proof showing the current deferred outcome.
+- [x] Reproduce the public raw `irm ... | iex` installer path in an isolated install root and record the current failure or a mutation proof.
+- [x] Change Windows standalone uninstall to complete removal semantics without scheduled wording, while preserving Unix cleanup and npm fallback.
+- [x] Make the raw PowerShell installer null-safe at its environment and URL boundaries and add the smallest regression contract.
+- [x] Run focused tests, diagnostics, real Windows/PowerShell surface QA, and tear down every fixture.
+- [x] Run full applicable verification over the mixed worktree, then bump and verify the next CLI patch release.
+- [ ] Commit and push all requested current changes on `main`, tag `cli-v0.2.3`, and verify the published release assets/checksums.
+
+## Review
+
+- Windows fixture red/green proof: the old implementation returned `deferred: true`; the fixed path returns `deferred: false` and removes the fixture root. The real `0.2.3` bundle uses the launcher handoff required by Windows file locks, returns uninstall exit code `0`, prints no scheduled-cleanup message, and removed its root after the lock-release window without user action.
+- The PowerShell installer remains BOM-free and WebClient-based, now guards missing `LOCALAPPDATA`, release URL, and download-client disposal paths. The public `cli-v0.2.2` raw `irm | iex` flow completed all seven stages in an isolated root; the final `cli-v0.2.3` default flow is the post-publication gate.
+- `npm run verify` passed: 313 tests passed, one Windows symlink fixture skipped because this host lacks symlink privilege, and CLI/web/extension builds passed. Focused uninstall/installer tests passed 3/3 with the same skip, and `node --check scripts/build-bundle.mjs` passed.
+- Pending only: commit/push all current worktree changes, publish `cli-v0.2.3`, and rerun the exact public default installer against that release.
+
+# G069 Release every distribution-facing push (2026-07-31)
+
+## Plan
+
+- [x] Confirm the tag-triggered release workflow and current published version.
+- [x] Bump the package and installer defaults to `0.2.2`, then verify the release inputs.
+- [x] Commit, push, tag `cli-v0.2.2`, and verify the published cross-platform assets.
+
+## Review
+
+- `d758b0b` (`chore(release): bump cli to 0.2.2`) and annotated tag `cli-v0.2.2` are pushed. Release workflow `30638186114` passed all four platform builds and published the Windows x64, macOS Intel, macOS Apple Silicon, Linux x64 archives plus `checksums.txt`.
+- `npm run verify` passed 313 tests with one Windows symlink-permission skip; package dry run reports `yt2sheet@0.2.2`; Git Bash installer syntax and UTF-8 PowerShell parser checks passed. The public raw installer is BOM-free, defaults to `cli-v0.2.2`, and uses `WebClient` rather than `Invoke-WebRequest`.
+
+# G068 PowerShell release-asset download repair (2026-07-31)
+
+## Plan
+
+- [x] Reproduce the PowerShell 5.1 release-download failure against the public installer path.
+- [x] Replace the unstable downloader with a .NET release-asset transfer and lock it with a regression test.
+- [x] Verify the local raw `irm ... | iex` equivalent to completion in an isolated root.
+- [x] Commit and push only the installer repair, then verify the published raw path.
+
+## Review
+
+- The PowerShell 5.1 `Invoke-WebRequest` release transfer stopped at 53,258,000 of 133,682,017 bytes. `System.Net.WebClient.DownloadFile` completed the isolated raw-script flow through stages 1/7 to 7/7; `yt2 help` exited 0. `npm run verify` passed 313 tests with one Windows symlink-permission skip.
+- Commit `6465013` is pushed to `main`; GitHub raw content matches the QA-tested local script byte-for-byte, begins with `p` (no BOM), contains `System.Net.WebClient`, and contains no `Invoke-WebRequest`.
+
 # 2026-07-31 Video-to-Score architecture review
 
 ## Plan

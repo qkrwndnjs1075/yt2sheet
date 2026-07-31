@@ -3,7 +3,7 @@ import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:f
 import test from "node:test";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { uninstallStandaloneCli } from "../cli/uninstall";
+import { formatCliUninstallOutcome, uninstallStandaloneCli } from "../cli/uninstall";
 
 test("removes a Unix standalone fixture and only its installer PATH line", async (t) => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "yt2sheet-uninstall-"));
@@ -70,7 +70,7 @@ test("hands non-standalone CLI installs back to npm", async () => {
   }
 });
 
-test("defers Windows standalone cleanup until the runtime exits", { skip: process.platform !== "win32" }, async (t) => {
+test("removes a Windows standalone fixture immediately", { skip: process.platform !== "win32" }, async (t) => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "yt2sheet-windows-uninstall-"));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
 
@@ -88,28 +88,10 @@ test("defers Windows standalone cleanup until the runtime exits", { skip: proces
     homeDirectory: fixtureRoot
   });
 
-  assert.deepEqual(outcome, { kind: "removed", installRoot, deferred: true });
-  await waitForMissingPath(installRoot);
+  assert.deepEqual(outcome, { kind: "removed", installRoot, deferred: false });
+  assert.doesNotMatch(formatCliUninstallOutcome(outcome), /scheduled/i);
+  await assert.rejects(access(installRoot));
 });
-
-async function waitForMissingPath(path: string): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      await access(path);
-    } catch (error: unknown) {
-      if (isMissingPath(error)) {
-        return;
-      }
-      throw error;
-    }
-    await new Promise((resolveDone) => setTimeout(resolveDone, 100));
-  }
-  throw new Error(`Timed out waiting for cleanup: ${path}`);
-}
-
-function isMissingPath(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
 
 function isSymlinkPermissionError(error: unknown): boolean {
   return error instanceof Error && "code" in error && (error.code === "EPERM" || error.code === "EACCES");
