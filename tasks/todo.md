@@ -1329,11 +1329,17 @@
 
 - [x] Connect to the user's authenticated Chrome Render dashboard.
 - [x] Confirm the GitHub remote contains the current standalone Docker deployment code.
-- [ ] Create the Render Docker Web Service and configure the health check.
-- [ ] Verify the deployed URL and `/api/health`.
+- [x] Create the Render Docker Web Service and configure the health check.
+- [x] Verify the deployed URL and `/api/health`.
 
 ## Review
 
+- The first Render deployment at `46cf9a2` reached the runtime but failed with `sh: 1: tsx: not found`.
+- Root cause: `NODE_ENV=production` caused the runtime `npm ci` to omit `tsx` from `devDependencies`; `af06c5b` changed it to `npm ci --include=dev` and added a regression test.
+- `npm run verify` passed after the fix: typecheck, 318 tests, standalone web build, and extension build.
+- Render redeploy at `af06c5b` is live in Singapore on the Free plan at [https://yt2sheet.onrender.com](https://yt2sheet.onrender.com). Logs show `host: 0.0.0.0`, `port: 10000`, and `Your service is live`.
+- Manual public checks passed: Chrome rendered the landing page; the JS asset returned HTTP 200 with 105787 bytes; `/api/health` returned HTTP 200 and `{\"status\":\"ok\"}`. Direct health navigation in Chrome was blocked by the local client, so the endpoint response was verified with curl.
+- Free Render instances can sleep and have ephemeral local storage; generated files are not durable across restarts.
 - `npm run verify` passed: typecheck, 317 tests, standalone web build, and extension build.
 - Deployment implementation was committed as `cb48188` (`feat(deploy): run web and API in one container`) and pushed to `origin/main`.
 - The local worktree and remote `main` both resolve to `cb481882a9bac2d6b72c67fc0d05fb0e9319b1ba`.
