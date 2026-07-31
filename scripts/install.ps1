@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
-  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.1" } else { $env:YT2SHEET_RELEASE_TAG }
+  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.2" } else { $env:YT2SHEET_RELEASE_TAG }
 }
 if ([string]::IsNullOrWhiteSpace($Repository)) {
   $Repository = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_REPOSITORY)) { "qkrwndnjs1075/yt2sheet" } else { $env:YT2SHEET_REPOSITORY }
