@@ -1465,4 +1465,5 @@
 - A Windows standalone bundle generated its own Node runtime and ran `yt2 --help`; the same bundle processed `1yCkz9VT3ZA` into a 5-page, 2,153,690-byte PDF beginning with `%PDF-`.
 - A local fake Release server passed the PowerShell installer's archive download, SHA-256 verification, extraction, per-user install path, and PATH registration flow; the test restored the original user PATH.
 - `npm run verify` passed all 327 tests, typecheck, CLI build, standalone web build, and extension build. `npm pack --dry-run` passed.
-- The Release workflow uses current `macos-15-intel` and `macos-15` runners for Intel and Apple Silicon. GitHub Actions was not run because no commit, tag, or push was authorized; publishing `cli-v0.2.0` will create the four archives and `checksums.txt`.
+- The `cli-v0.2.0` tag triggered run `30627640364`; all four platform build jobs passed. Its Release job initially failed because `gh release create --generate-notes` had no checkout, so `4056709` added checkout and was pushed to `main`.
+- The verified artifacts were published at [https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.0](https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.0) with Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and `checksums.txt`. The uploaded checksums passed `sha256sum --check` before publication.
