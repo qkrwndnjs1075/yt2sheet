@@ -1532,6 +1532,6 @@
 ## Review
 
 - `yt2 uninstall` now validates the standalone `VERSION` and directory contract before removing anything; npm-managed installs receive `npm uninstall -g yt2sheet` instead.
-- Windows schedules an independent hidden PowerShell cleanup so the running Node runtime can exit before its install root is removed; the user PATH entry is changed only when the owned bundle path is present.
+- Windows schedules an independent hidden cleanup process through `cmd.exe start`; it invokes a temporary PowerShell script after the bundled runtime exits, uses `rmdir` for the bundle tree, and changes the user PATH only when the owned bundle path is present.
 - Parser and uninstall tests passed, the Windows deferred-cleanup fixture removed its temporary root, compiled/source help and npm handoff smokes passed, and `npm run verify` passed with 313 tests plus one symlink-permission skip.
-- POSIX/PowerShell installer syntax, CLI build/package contents, and `git diff --check` passed. The Unix symlink fixture is skipped on this Windows host because Developer Mode or `SeCreateSymbolicLinkPrivilege` is unavailable.
+- POSIX/PowerShell installer syntax, CLI build/package contents, and `git diff --check` passed. A rebuilt Windows standalone bundle printed help and removed its full temporary install root. The Unix symlink fixture is skipped on this Windows host because Developer Mode or `SeCreateSymbolicLinkPrivilege` is unavailable.

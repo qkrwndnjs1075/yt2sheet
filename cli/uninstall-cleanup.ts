@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { lstat, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CliUninstallOptions } from "./uninstall";
 
@@ -27,36 +29,54 @@ export async function removeUnixArtifacts(root: string, options: CliUninstallOpt
 }
 
 export async function scheduleWindowsCleanup(root: string, environment: NodeJS.ProcessEnv): Promise<void> {
-  const command = buildWindowsCleanupCommand();
-  const bootstrap = buildWindowsCleanupBootstrap();
+  const scriptPath = join(tmpdir(), `yt2sheet-uninstall-${randomUUID()}.ps1`);
+  await writeFile(scriptPath, buildWindowsCleanupScript(), "utf8");
 
-  await new Promise<void>((resolveDone, rejectDone) => {
-    try {
-      const child = spawn(
-        "powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", bootstrap],
-        {
-          windowsHide: true,
-          stdio: "ignore",
-          env: {
-            ...environment,
-            YT2SHEET_UNINSTALL_ROOT: root,
-            YT2SHEET_UNINSTALL_COMMAND: command
+  try {
+    await new Promise<void>((resolveDone, rejectDone) => {
+      try {
+        const child = spawn(
+          "cmd.exe",
+          [
+            "/d",
+            "/c",
+            "start",
+            "\"\"",
+            "/b",
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+            scriptPath
+          ],
+          {
+            detached: true,
+            windowsHide: true,
+            stdio: "ignore",
+            env: {
+              ...environment,
+              YT2SHEET_UNINSTALL_ROOT: root
+            }
           }
-        }
-      );
-      child.once("error", rejectDone);
-      child.once("spawn", () => {
-        child.unref();
-        resolveDone();
-      });
-    } catch (error: unknown) {
-      rejectDone(error);
-    }
-  });
+        );
+        child.once("error", rejectDone);
+        child.once("spawn", () => {
+          child.unref();
+          resolveDone();
+        });
+      } catch (error: unknown) {
+        rejectDone(error);
+      }
+    });
+  } catch (error: unknown) {
+    await rm(scriptPath, { force: true });
+    throw error;
+  }
 }
 
-function buildWindowsCleanupCommand(): string {
+function buildWindowsCleanupScript(): string {
   return [
     "$root = [Environment]::GetEnvironmentVariable('YT2SHEET_UNINSTALL_ROOT', 'Process')",
     "$bin = [System.IO.Path]::Combine($root, 'bin')",
@@ -64,12 +84,8 @@ function buildWindowsCleanupCommand(): string {
     "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')",
     "if ($null -ne $userPath) { $pathEntries = @($userPath -split ';' | Where-Object { $_ }); $entries = @($pathEntries | Where-Object { $_.Trim().TrimEnd([char]92) -ine $bin.TrimEnd([char]92) }); if ($entries.Count -ne $pathEntries.Count) { [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User') } }",
     "$attempt = 0",
-    "while ((Test-Path -LiteralPath $root) -and $attempt -lt 20) { try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 250; $attempt += 1 } }"
-  ].join("; ");
-}
-
-function buildWindowsCleanupBootstrap(): string {
-  return "$command = [Environment]::GetEnvironmentVariable('YT2SHEET_UNINSTALL_COMMAND', 'Process'); Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', $command) -WindowStyle Hidden";
+    "try { while ((Test-Path -LiteralPath $root) -and $attempt -lt 120) { try { $quotedRoot = '\"' + $root + '\"'; & cmd.exe /d /c \"rmdir /s /q $quotedRoot\"; if ($LASTEXITCODE -ne 0) { throw \"rmdir exited with code $LASTEXITCODE\" } } catch { Start-Sleep -Milliseconds 250; $attempt += 1 } } } finally { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue }"
+  ].join("\r\n");
 }
 
 function profilePaths(options: CliUninstallOptions): readonly string[] {
