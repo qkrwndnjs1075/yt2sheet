@@ -44,6 +44,44 @@ The options page shows:
 
 Click the extension action again to stop capture.
 
+## Single-server standalone deployment
+
+The standalone web app and the Hono API can run from one Node server. This is
+not an SSR rewrite: Vite builds `dist-web`, and the production Hono app serves
+those files plus `/api/*` from the same origin. The API app remains separately
+testable for fixtures and local development.
+
+### Local production-shaped run
+
+```sh
+npm ci
+npm run build:web
+npm run start:server
+```
+
+The server serves `dist-web` when it exists, defaults to `127.0.0.1:4174`, and
+keeps the existing Vite development workflow on `127.0.0.1:4173`. Set
+`HOST=0.0.0.0` only when the process should accept connections directly from a
+container or network interface.
+
+### Docker run
+
+```sh
+docker build -t yt2sheet .
+docker run --rm --name yt2sheet \
+  -p 8080:8080 \
+  -v yt2sheet-data:/app/.yt2sheet-data \
+  yt2sheet
+```
+
+The image installs `yt-dlp`, `ffmpeg`, and `ffprobe`, builds the web bundle, and
+starts one server on port `8080`. The named data volume preserves the job
+workspace and generated results across container restarts. The backend still
+uses one in-memory job queue and should run as one instance.
+
+Useful environment variables are `HOST`, `PORT`, `YT2SHEET_WEB_ROOT`,
+`YT2SHEET_DATA_ROOT`, `YT_DLP_PATH`, `FFMPEG_PATH`, and `FFPROBE_PATH`.
+
 ## Current Detector Ceilings
 
 - The sampling loop is intentionally lossy: if the previous analysis/debug send is still running, the next tick is counted as dropped instead of queued.

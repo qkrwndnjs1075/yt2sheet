@@ -1289,3 +1289,45 @@
 - Regression: the new moving-playback-overlay fixture failed RED at two accepted scores and passes GREEN at one. The established unequal-staff-gap PDF regression still keeps three distinct score sheets.
 - Exact active-backend proof: job `35a33bf0-f3e4-4762-8f12-de1bb8bb3d60` succeeded through port 4174 with three 1200x1700 pages and 13 score systems (5+5+3); the maximum remaining notation overlap is 40.02%, below the 60% duplicate threshold. No Visual QA or subagents were used.
 - Final verification: `npm run verify` passed typecheck, 297/297 tests, standalone-web build, and extension build; `git diff --check` and changed-file LSP diagnostics are clean.
+
+# G054 Free Hosting Deployment Advice (2026-07-31)
+
+## Plan
+
+- [x] Map the current standalone web/backend runtime and deployment constraints.
+- [x] Verify current free-tier hosting constraints from official provider documentation.
+- [x] Record the recommended split deployment and practical next steps.
+
+## Review
+
+- Recommended split: deploy `dist-web` as a static site on Cloudflare Pages and run the Node/Hono media backend as a Docker service on Render for a hobby prototype or Cloud Run when jobs need a longer managed request window.
+- Current backend blockers are `127.0.0.1` binding, required `yt-dlp`/`ffmpeg`/`ffprobe` executables, process-local job state, and ephemeral local result files. Separate hosting therefore needs a public backend URL plus frontend API-base/CORS configuration; horizontal scaling is not safe yet.
+- Render Free is suitable only for testing because it sleeps after 15 minutes idle and loses local files on restart/redeploy. Cloud Run supports custom containers and up to 60-minute request timeouts, but its local filesystem is temporary and usage beyond its free tier can incur charges.
+- True always-free VM option: Oracle Cloud Always Free, with more server administration and capacity/reclamation risk. No production deployment was performed in this advice-only task.
+
+# G055 Single-server web/API deployment (2026-07-31)
+
+## Plan
+
+- [x] Preserve the API-only app boundary and define the production web/API composition.
+- [x] Add a regression for serving `dist-web` and keeping `/api` behavior unchanged.
+- [x] Connect production static serving and configurable host/web-root environment variables.
+- [x] Add the single-container deployment files and concise deployment documentation.
+- [x] Run focused and full verification plus a real local HTTP smoke check.
+
+## Review
+
+- Added `server/web-app.ts`, which preserves `createScoreJobApp()` as an API-only test/fixture boundary and conditionally serves the built `dist-web` directory from the same Hono app.
+- Added `HOST` and `YT2SHEET_WEB_ROOT` configuration while keeping local defaults compatible with the existing `127.0.0.1:4174` API workflow.
+- Added `Dockerfile` and `.dockerignore`; the image builds the web bundle, installs `yt-dlp`/`ffmpeg`/`ffprobe`, exposes port 8080, and mounts `.yt2sheet-data` as a volume for single-instance operation.
+- Added `tests/server-web-app.test.ts`: 317/317 tests pass. `npm run verify` passes typecheck, tests, standalone web build, and extension build. Changed-file LSP diagnostics and `git diff --check` are clean.
+- Live smoke check passed on port 4478: `/` HTTP 200 with HTML, generated asset HTTP 200, and `/api/health` returned `{"status":"ok"}`. Docker image build was not run because Docker Desktop's Linux engine was unavailable; Dockerfile LSP was unavailable and its install was declined, while manual escape-hatch scan passed.
+
+# G056 Render deployment (2026-07-31)
+
+## Plan
+
+- [x] Connect to the user's authenticated Chrome Render dashboard.
+- [ ] Confirm the GitHub remote contains the current standalone Docker deployment code.
+- [ ] Create the Render Docker Web Service and configure the health check.
+- [ ] Verify the deployed URL and `/api/health`.

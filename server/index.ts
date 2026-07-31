@@ -1,16 +1,17 @@
 import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import pino from "pino";
-import { createScoreJobApp } from "./app";
 import { assertMediaTools, defaultMediaTools } from "./media-tools";
 import { ScoreJobService } from "./score-job-service";
 import { cleanupOwnedResultFiles, cleanupOwnedWorkDirectories, shutdownScoreJobServer } from "./workspace-cleanup";
+import { createProductionApp } from "./web-app";
 import { YouTubeScoreProcessor } from "./youtube-score-processor";
 
 const logger = pino({ name: "yt2sheet-server" });
-const host = "127.0.0.1";
+const host = process.env.HOST?.trim() || "127.0.0.1";
 const port = parsePort(process.env.PORT);
 const dataRoot = resolve(process.env.YT2SHEET_DATA_ROOT?.trim() || ".yt2sheet-data");
+const webRoot = resolve(process.env.YT2SHEET_WEB_ROOT?.trim() || "dist-web");
 
 void start().catch((error: unknown) => {
   logger.fatal({ err: error }, "server startup failed");
@@ -23,9 +24,9 @@ async function start(): Promise<void> {
   await cleanupOwnedWorkDirectories(dataRoot);
   const processor = new YouTubeScoreProcessor({ dataRoot, tools: defaultMediaTools });
   const service = new ScoreJobService(processor, { dataRoot });
-  const app = createScoreJobApp(service);
+  const app = createProductionApp(service, webRoot);
   const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
-    logger.info({ host: info.address, port: info.port, dataRoot }, "server listening");
+    logger.info({ host: info.address, port: info.port, dataRoot, webRoot }, "server listening");
   });
 
   let shutdownStarted = false;

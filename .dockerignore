@@ -1,0 +1,12 @@
+.git
+.github
+.omo
+.codegraph
+node_modules
+dist
+dist-web
+build-test
+.yt2sheet-data
+*.log
+.env
+.env.*

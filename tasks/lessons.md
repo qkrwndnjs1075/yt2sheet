@@ -43,3 +43,7 @@
 - A research-backed optional format is not automatically a product requirement. Do not surface A4/Letter/legacy choices unless the user explicitly asks for selectable formats.
 - When the user says "전처럼 PDF만", restore the full contract boundary, not only the visible control: UI, request schema, domain type, renderer, fixtures, tests, and design documentation should all describe one output.
 - Preserve the prior standalone geometry (`1200x1700`) and keep the separately shipped extension behavior unchanged.
+
+# 2026-07-31 - Use the user's requested Chrome surface for deployment
+
+- When the user explicitly asks for Chrome control, use the connected user Chrome session rather than a separate browser automation session. Keep authentication, OTP, and provider permission approvals with the user.
