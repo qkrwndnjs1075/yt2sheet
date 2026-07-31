@@ -23,7 +23,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY --from=web-build /app/dist-web ./dist-web
 COPY --from=web-build /app/server ./server
 COPY --from=web-build /app/src ./src
