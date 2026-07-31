@@ -18,6 +18,8 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(shell, /### \[%s\/%s\]/);
   assert.match(powershell, /SetEnvironmentVariable\("Path",/);
   assert.match(powershell, /yt2\.cmd/);
+  assert.doesNotMatch(powershell, /Invoke-WebRequest/, "Windows PowerShell 5.1 must not use Invoke-WebRequest for the large GitHub release archive");
+  assert.match(powershell, /System\.Net\.WebClient/, "the raw installer must use the .NET downloader that survives the release-asset transfer");
   assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1 \| iex/);
   assert.match(readme, /yt2 "https:\/\/www\.youtube\.com\/watch\?v=VIDEO_ID"/);
   assert.match(readme, /wrap the entire URL in double quotes/);

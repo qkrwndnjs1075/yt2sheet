@@ -42,6 +42,20 @@ function Write-InstallStep {
   $percent = [Math]::Round(($script:currentStep / $script:totalSteps) * 100)
   Write-Output ("### [{0}/{1}] {2} ({3}%)" -f $script:currentStep, $script:totalSteps, $Message, $percent)
 }
+function Download-InstallFile {
+  param(
+    [string]$Uri,
+    [string]$Destination
+  )
+
+  $client = New-Object System.Net.WebClient
+  try {
+    $client.DownloadFile($Uri, $Destination)
+  }
+  finally {
+    $client.Dispose()
+  }
+}
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("yt2sheet-install-" + [guid]::NewGuid().ToString("N"))
 $archivePath = Join-Path $temporaryRoot $assetName
 $checksumsPath = Join-Path $temporaryRoot "checksums.txt"
@@ -50,9 +64,9 @@ $stagingRoot = Join-Path $temporaryRoot "staged"
 try {
   New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
   Write-InstallStep "yt2 번들 다운로드 중"
-  Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$assetName" -OutFile $archivePath
+  Download-InstallFile -Uri "$baseUrl/$assetName" -Destination $archivePath
   Write-InstallStep "무결성 파일 다운로드 중"
-  Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/checksums.txt" -OutFile $checksumsPath
+  Download-InstallFile -Uri "$baseUrl/checksums.txt" -Destination $checksumsPath
 
   Write-InstallStep "SHA-256 검증 중"
   $checksumLine = Get-Content -LiteralPath $checksumsPath | Where-Object {
