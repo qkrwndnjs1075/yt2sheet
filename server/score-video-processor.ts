@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 import { computeScorePagePlacements, packScorePages } from "../src/shared/score-page-layout";
@@ -18,7 +19,19 @@ import {
   normalizeScoreImage,
   type NotationIdentity
 } from "./score-image-normalizer";
+import { createGrayscaleAnalysis, prepareScoreCrop } from "./score-image-preparer";
 import { ScorePipelineError } from "./score-job-service";
+import {
+  createScoreExtractionQualityReport,
+  frameIdentifier,
+  resolveDuplicateReason,
+  scoreIdentifier,
+  type DuplicateReason,
+  type FrameDisposition,
+  type FrameIdentifier,
+  type ScoreExtractionQualityReport,
+  type ScoreIdentifier
+} from "./score-quality-report";
 
 type AcceptedScore = {
   readonly path: string;
@@ -28,6 +41,11 @@ type AcceptedScore = {
   readonly staffGap: number;
   readonly image: { readonly width: number; readonly height: number };
 };
+
+type FrameDecision =
+  | { readonly frameId: FrameIdentifier; readonly disposition: "no-score" }
+  | { readonly frameId: FrameIdentifier; readonly disposition: "accepted"; readonly scoreId: ScoreIdentifier; readonly score: AcceptedScore }
+  | { readonly frameId: FrameIdentifier; readonly disposition: "duplicate"; readonly duplicateReason: DuplicateReason };
 
 const ANALYSIS_WIDTH = 1_280;
 const DOMINANT_DUPLICATE_DISTANCE = 8;
@@ -44,6 +62,9 @@ export type CreateScorePdfOptions = {
   readonly onProgress?: (progress: number) => void;
   readonly signal?: AbortSignal;
   readonly concurrency?: number;
+  readonly outputArtifactSink?: () => Promise<void>;
+  readonly qualityReportSink?: (report: ScoreExtractionQualityReport) => Promise<void>;
+  readonly nowMs?: () => number;
   readonly metadata: {
     readonly videoId: string;
     readonly createdAt: Date;
@@ -57,6 +78,8 @@ export async function createScorePdfFromFrames(
   options: CreateScorePdfOptions
 ): Promise<ScorePdfResult> {
   const onProgress = options.onProgress ?? (() => undefined);
+  const nowMs = options.nowMs ?? (() => performance.now());
+  const totalStartedAt = nowMs();
   const rasterLayout = rasterLayoutFor(STANDALONE_SCORE_PDF);
   const scoreDirectory = join(workspace, "scores");
   const pageDirectory = join(workspace, "pages");
@@ -68,6 +91,7 @@ export async function createScorePdfFromFrames(
   // Phase 1: 병렬 프레임 분석 (순서 보존, 중복 제거는 Phase 2에서)
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_ANALYSIS_CONCURRENCY);
   let completedFrames = 0;
+  const analysisStartedAt = nowMs();
   const candidates = await mapWithConcurrency(
     framePaths,
     concurrency,
@@ -79,23 +103,37 @@ export async function createScorePdfFromFrames(
       return candidate;
     }
   );
+  const analysisFinishedAt = nowMs();
 
   // Phase 2: 순차 중복 제거 (해시 비교만 수행 — 저렴)
   const scores: AcceptedScore[] = [];
-  for (const candidate of candidates) {
+  const frameDecisions: FrameDecision[] = [];
+  const deduplicationStartedAt = nowMs();
+  for (let index = 0; index < candidates.length; index += 1) {
     throwIfCancelled(options.signal);
-    if (candidate && !scores.some((score) => isDuplicateScore(score, candidate))) {
+    const candidate = candidates[index];
+    const frameId = frameIdentifier(index + 1);
+    if (candidate === null) {
+      frameDecisions.push({ frameId, disposition: "no-score" });
+      continue;
+    }
+    const duplicateReason = findDuplicateReason(scores, candidate);
+    if (duplicateReason === null) {
       scores.push(candidate);
-    } else if (candidate) {
+      frameDecisions.push({ frameId, disposition: "accepted", scoreId: scoreIdentifier(scores.length), score: candidate });
+    } else {
+      frameDecisions.push({ frameId, disposition: "duplicate", duplicateReason });
       await rm(candidate.path, { force: true });
     }
   }
+  const deduplicationFinishedAt = nowMs();
 
   if (scores.length === 0) {
     throw new ScorePipelineError("NO_SCORE_FOUND", "영상에서 오선 또는 TAB 악보를 찾지 못했습니다.");
   }
 
   // Phase 3: 병렬 페이지 렌더링
+  const pageCompositionStartedAt = nowMs();
   const pages = packScorePages(scores, rasterLayout);
   const pagePaths = await Promise.all(pages.map(async (page, index) => {
     throwIfCancelled(options.signal);
@@ -106,9 +144,23 @@ export async function createScorePdfFromFrames(
   onProgress(88);
   throwIfCancelled(options.signal);
   await writePdf(pagePaths, outputPath, STANDALONE_SCORE_PDF, options.metadata, options.signal);
+  await options.outputArtifactSink?.();
+  const pageCompositionFinishedAt = nowMs();
   throwIfCancelled(options.signal);
   onProgress(98);
   throwIfCancelled(options.signal);
+  const totalFinishedAt = nowMs();
+  if (options.qualityReportSink) {
+    await options.qualityReportSink(createScoreExtractionQualityReport({
+      durationsMs: {
+        analysis: elapsedMs(analysisStartedAt, analysisFinishedAt),
+        deduplication: elapsedMs(deduplicationStartedAt, deduplicationFinishedAt),
+        pageComposition: elapsedMs(pageCompositionStartedAt, pageCompositionFinishedAt),
+        total: elapsedMs(totalStartedAt, totalFinishedAt)
+      },
+      frames: createFrameDispositions(frameDecisions, pages)
+    }));
+  }
   return { pageCount: pagePaths.length, scoreCount: scores.length };
 }
 
@@ -130,14 +182,16 @@ async function analyzeFrame(
   }
   const { data, info } = await image.clone()
     .resize({ width: ANALYSIS_WIDTH, withoutEnlargement: true })
-    .greyscale()
+    .toColourspace("srgb")
+    .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  if (info.channels !== 1) {
+  if (info.channels !== 3) {
     throw new ScorePipelineError("IMAGE_DECODE_FAILED", "영상 프레임을 분석할 수 없습니다.");
   }
-  const frame = buildPreprocessedFrame({ id: framePath, width: info.width, height: info.height, grayscale: data });
-  const crop = findScoreCrop(frame);
+  const rgbInfo = { width: info.width, height: info.height, channels: info.channels };
+  const frame = buildPreprocessedFrame({ id: framePath, width: info.width, height: info.height, grayscale: await createGrayscaleAnalysis(data, rgbInfo) });
+  const crop = prepareScoreCrop(data, rgbInfo, findScoreCrop(frame));
   if (!crop) {
     return null;
   }
@@ -174,13 +228,52 @@ async function analyzeFrame(
   };
 }
 
-function isDuplicateScore(left: AcceptedScore, right: AcceptedScore): boolean {
+function findDuplicateReason(scores: readonly AcceptedScore[], candidate: AcceptedScore): DuplicateReason | null {
+  for (const score of scores) {
+    const duplicateReason = duplicateReasonForPair(score, candidate);
+    if (duplicateReason !== null) return duplicateReason;
+  }
+  return null;
+}
+
+function duplicateReasonForPair(left: AcceptedScore, right: AcceptedScore): DuplicateReason | null {
   const differenceDistance = hammingDistance(left.hash, right.hash);
-  return isNearDuplicate(left.hash, right.hash)
-    || hammingDistance(left.dominantHash, right.dominantHash) <= DOMINANT_DUPLICATE_DISTANCE
-    || (differenceDistance <= NOTATION_IDENTITY_CANDIDATE_DISTANCE
-      && hasSimilarStaffGap(left.staffGap, right.staffGap)
-      && hasStrongNotationOverlap(left.notationIdentity, right.notationIdentity));
+  if (isNearDuplicate(left.hash, right.hash)) {
+    return resolveDuplicateReason({ nearDuplicate: true, dominantInk: false, notationIdentity: false });
+  }
+  if (hammingDistance(left.dominantHash, right.dominantHash) <= DOMINANT_DUPLICATE_DISTANCE) {
+    return resolveDuplicateReason({ nearDuplicate: false, dominantInk: true, notationIdentity: false });
+  }
+  if (differenceDistance <= NOTATION_IDENTITY_CANDIDATE_DISTANCE
+    && hasSimilarStaffGap(left.staffGap, right.staffGap)
+    && hasStrongNotationOverlap(left.notationIdentity, right.notationIdentity)) {
+    return resolveDuplicateReason({ nearDuplicate: false, dominantInk: false, notationIdentity: true });
+  }
+  return null;
+}
+
+function createFrameDispositions(decisions: readonly FrameDecision[], pages: readonly (readonly AcceptedScore[])[]): readonly FrameDisposition[] {
+  return decisions.map((decision) => {
+    switch (decision.disposition) {
+      case "no-score":
+        return decision;
+      case "duplicate":
+        return decision;
+      case "accepted":
+        return {
+          frameId: decision.frameId,
+          disposition: "accepted",
+          scoreId: decision.scoreId,
+          pageNumber: pages.findIndex((page) => page.includes(decision.score)) + 1
+        };
+      default:
+        return decision;
+    }
+  });
+}
+
+function elapsedMs(startedAt: number, finishedAt: number): number {
+  return Math.max(0, finishedAt - startedAt);
 }
 
 function hasSimilarStaffGap(left: number, right: number): boolean {

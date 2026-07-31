@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { lstat, mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import pino from "pino";
 import { defaultMediaTools, runProcess, type MediaTools, type RunOptions } from "./media-tools";
+import { deriveScoreQualitySidecarPath, serializeScoreExtractionQualityReport } from "./score-quality-report";
 import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type ScoreJobProcessorContext, type ScoreJobResult } from "./score-job-service";
 import { createScorePdfFromFrames, listExtractedFrames } from "./score-video-processor";
 import { createOwnedWorkDirectoryName } from "./workspace-cleanup";
@@ -18,6 +19,14 @@ type ProcessorOptions = {
   readonly processRunner?: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
   readonly frameLister?: typeof listExtractedFrames;
   readonly pdfCreator?: typeof createScorePdfFromFrames;
+  readonly sidecarWriter?: (path: string, contents: string) => Promise<void>;
+  readonly sidecarRenamer?: (sourcePath: string, destinationPath: string) => Promise<void>;
+};
+
+type OwnedArtifact = {
+  readonly path: string;
+  readonly device: bigint;
+  readonly inode: bigint;
 };
 
 export class YouTubeScoreProcessor implements ScoreJobProcessor {
@@ -26,6 +35,8 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
   private readonly processRunner: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
   private readonly frameLister: typeof listExtractedFrames;
   private readonly pdfCreator: typeof createScorePdfFromFrames;
+  private readonly sidecarWriter: (path: string, contents: string) => Promise<void>;
+  private readonly sidecarRenamer: (sourcePath: string, destinationPath: string) => Promise<void>;
 
   constructor(private readonly options: ProcessorOptions) {
     this.tools = options.tools ?? defaultMediaTools;
@@ -33,6 +44,8 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     this.processRunner = options.processRunner ?? runProcess;
     this.frameLister = options.frameLister ?? listExtractedFrames;
     this.pdfCreator = options.pdfCreator ?? createScorePdfFromFrames;
+    this.sidecarWriter = options.sidecarWriter ?? ((path, contents) => writeFile(path, contents, { encoding: "utf8", flag: "wx" }));
+    this.sidecarRenamer = options.sidecarRenamer ?? rename;
   }
 
   async process(input: ScoreJobInput, context: ScoreJobProcessorContext): Promise<ScoreJobResult> {
@@ -41,7 +54,13 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     const frameDirectory = join(workDirectory, "frames");
     const resultDirectory = join(this.options.dataRoot, "results");
     const outputPath = join(resultDirectory, `yt2sheet-result-p${process.pid}-${runId}.pdf`);
+    const sidecarPath = deriveScoreQualitySidecarPath(outputPath);
+    const sidecarTemporaryPath = `${sidecarPath}.${randomUUID()}.tmp`;
     const { onProgress, signal } = context;
+    let failed = false;
+    let pdfArtifact: OwnedArtifact | null = null;
+    let sidecarArtifact: OwnedArtifact | null = null;
+    let sidecarTemporaryArtifact: OwnedArtifact | null = null;
 
     try {
       throwIfCancelled(signal);
@@ -70,13 +89,32 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       const result = await this.pdfCreator(frames, workDirectory, outputPath, {
         onProgress,
         signal,
+        outputArtifactSink: async () => {
+          pdfArtifact = await captureOwnedArtifact(outputPath);
+        },
+        qualityReportSink: async (report) => {
+          throwIfCancelled(signal);
+          pdfArtifact ??= await captureOwnedArtifact(outputPath);
+          await this.sidecarWriter(sidecarTemporaryPath, serializeScoreExtractionQualityReport(report));
+          sidecarTemporaryArtifact = await captureOwnedArtifact(sidecarTemporaryPath);
+          throwIfCancelled(signal);
+          await this.sidecarRenamer(sidecarTemporaryPath, sidecarPath);
+          sidecarArtifact = await captureOwnedArtifact(sidecarPath);
+          throwIfCancelled(signal);
+        },
         metadata: { videoId: input.videoId, createdAt: this.clock() }
       });
+      pdfArtifact ??= await captureOwnedArtifact(outputPath);
       throwIfCancelled(signal);
       logger.info({ videoId: input.videoId, scoreCount: result.scoreCount, pageCount: result.pageCount }, "score job completed");
       return { filePath: outputPath, pageCount: result.pageCount };
     } catch (error) {
-      await rm(outputPath, { force: true });
+      failed = true;
+      await Promise.allSettled([
+        unlinkMatchingArtifact(pdfArtifact),
+        unlinkMatchingArtifact(sidecarArtifact),
+        unlinkMatchingArtifact(sidecarTemporaryArtifact)
+      ]);
       if (error instanceof Error && error.name === "AbortError") {
         throw error;
       }
@@ -86,7 +124,12 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       logger.error({ err: error, videoId: input.videoId }, "score job failed");
       throw new ScorePipelineError("MEDIA_PROCESSING_FAILED", "YouTube 영상을 처리하지 못했습니다.", { cause: error });
     } finally {
-      await rm(workDirectory, { recursive: true, force: true });
+      const cleanup = rm(workDirectory, { recursive: true, force: true });
+      if (failed) {
+        await Promise.allSettled([cleanup]);
+      } else {
+        await cleanup;
+      }
     }
   }
 
@@ -140,6 +183,26 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
   }
 }
 
+async function captureOwnedArtifact(path: string): Promise<OwnedArtifact | null> {
+  try {
+    const stats = await lstat(path, { bigint: true });
+    if (stats.isSymbolicLink() || !stats.isFile()) return null;
+    return { path, device: stats.dev, inode: stats.ino };
+  } catch (error) {
+    if (isFileSystemError(error)) return null;
+    throw error;
+  }
+}
+
+async function unlinkMatchingArtifact(artifact: OwnedArtifact | null): Promise<void> {
+  if (!artifact) return;
+  const stats = await lstat(artifact.path, { bigint: true });
+  if (!stats.isSymbolicLink() && stats.isFile()
+    && stats.dev === artifact.device && stats.ino === artifact.inode) {
+    await unlink(artifact.path);
+  }
+}
+
 function throwIfCancelled(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new DOMException("The operation was aborted.", "AbortError");
@@ -173,6 +236,10 @@ export function buildVideoDownloadArguments(
 
 function isYouTubeDownloadForbidden(error: unknown): boolean {
   return error instanceof Error && /HTTP Error 403: Forbidden/i.test(error.message);
+}
+
+function isFileSystemError(error: unknown): boolean {
+  return error instanceof Error && "code" in error;
 }
 
 export function buildFrameExtractionArguments(videoPath: string, frameDirectory: string, duration: number): string[] {

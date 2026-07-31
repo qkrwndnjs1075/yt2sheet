@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, realpath, unlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+import { deriveScoreQualitySidecarPath } from "./score-quality-report";
 
 // allow: SIZE_OK - reviewed Todo 2 confines the job state machine and its result capability to this service.
 
@@ -71,10 +72,15 @@ type ActiveExecution = {
   readonly controller: AbortController;
 };
 
-type ValidatedResult = {
+type OwnedArtifact = {
   readonly path: string;
-  readonly device: number;
-  readonly inode: number;
+  readonly device: bigint;
+  readonly inode: bigint;
+};
+
+type CompletedArtifacts = {
+  readonly pdf: OwnedArtifact;
+  readonly sidecar: OwnedArtifact | null;
 };
 
 const RESULT_TTL_MS = 60 * 60 * 1_000;
@@ -83,6 +89,7 @@ const INVALID_RESULT_FAILURE = { code: "INVALID_RESULT_PATH", message: "결과 �
 
 export class ScoreJobService {
   private readonly jobs = new Map<string, StoredScoreJob>();
+  private readonly completedArtifacts = new Map<string, CompletedArtifacts>();
   private readonly pendingJobIds: string[] = [];
   private readonly expiryTasks = new Map<string, ScheduledTask>();
   private readonly idleWaiters: Array<() => void> = [];
@@ -169,7 +176,7 @@ export class ScoreJobService {
       const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
       handle = await this.openFile(validated.path, constants.O_RDONLY | noFollow);
       const [openedStats, afterStats, parent] = await Promise.all([
-        handle.stat(), lstat(validated.path), realpath(dirname(validated.path))
+        handle.stat({ bigint: true }), lstat(validated.path, { bigint: true }), realpath(dirname(validated.path))
       ]);
       const root = await this.realResultsRoot();
       if (!root || !openedStats.isFile() || afterStats.isSymbolicLink() || !afterStats.isFile()
@@ -248,6 +255,8 @@ export class ScoreJobService {
       if (!validated) {
         this.jobs.set(jobId, { jobId, input, status: "failed", error: INVALID_RESULT_FAILURE });
       } else {
+        const sidecarArtifact = await captureOwnedArtifact(deriveScoreQualitySidecarPath(validated.path));
+        this.completedArtifacts.set(jobId, { pdf: validated, sidecar: sidecarArtifact });
         this.jobs.set(jobId, { jobId, input, status: "succeeded", progress: 100, result: { ...result, filePath: validated.path } });
       }
       this.scheduleExpiry(jobId);
@@ -271,29 +280,24 @@ export class ScoreJobService {
 
   private async expire(jobId: string): Promise<void> {
     const job = this.jobs.get(jobId);
+    const artifacts = this.completedArtifacts.get(jobId) ?? null;
+    this.completedArtifacts.delete(jobId);
     if (!job) return;
     this.jobs.delete(jobId);
-    if (job.status !== "succeeded") return;
-    const validated = await this.validateResult(job.result.filePath);
-    if (!validated) return;
-    try {
-      const afterStats = await lstat(validated.path);
-      if (!afterStats.isSymbolicLink() && afterStats.isFile()
-        && afterStats.dev === validated.device && afterStats.ino === validated.inode) {
-        await unlink(validated.path);
-      }
-    } catch (error) {
-      if (!isFileSystemError(error)) throw error;
-    }
+    if (job.status !== "succeeded" || !artifacts) return;
+    await unlinkMatchingArtifact(artifacts.pdf);
+    if (artifacts.sidecar) await unlinkMatchingArtifact(artifacts.sidecar);
   }
 
-  private async validateResult(filePath: string): Promise<ValidatedResult | null> {
+  private async validateResult(filePath: string): Promise<OwnedArtifact | null> {
     try {
       const root = await this.realResultsRoot();
       if (!root) return null;
       const candidate = resolve(filePath);
       if (dirname(candidate) !== root || !OWNED_RESULT.test(basename(candidate))) return null;
-      const [stats, parent, resolvedFile] = await Promise.all([lstat(candidate), realpath(dirname(candidate)), realpath(candidate)]);
+      const [stats, parent, resolvedFile] = await Promise.all([
+        lstat(candidate, { bigint: true }), realpath(dirname(candidate)), realpath(candidate)
+      ]);
       if (stats.isSymbolicLink() || !stats.isFile() || parent !== root || dirname(resolvedFile) !== root) return null;
       return { path: candidate, device: stats.dev, inode: stats.ino };
     } catch (error) {
@@ -332,6 +336,29 @@ export class ScoreJobAdmissionError extends Error {
 function toPublicFailure(error: unknown): { readonly code: string; readonly message: string } {
   if (error instanceof ScorePipelineError) return { code: error.code, message: error.publicMessage };
   return { code: "PROCESSING_FAILED", message: "악보 생성 중 오류가 발생했습니다." };
+}
+
+async function captureOwnedArtifact(path: string): Promise<OwnedArtifact | null> {
+  try {
+    const stats = await lstat(path, { bigint: true });
+    if (stats.isSymbolicLink() || !stats.isFile()) return null;
+    return { path, device: stats.dev, inode: stats.ino };
+  } catch (error) {
+    if (isFileSystemError(error)) return null;
+    throw error;
+  }
+}
+
+async function unlinkMatchingArtifact(artifact: OwnedArtifact): Promise<void> {
+  try {
+    const stats = await lstat(artifact.path, { bigint: true });
+    if (!stats.isSymbolicLink() && stats.isFile()
+      && stats.dev === artifact.device && stats.ino === artifact.inode) {
+      await unlink(artifact.path);
+    }
+  } catch (error) {
+    if (!isFileSystemError(error)) throw error;
+  }
 }
 
 function isFileSystemError(error: unknown): boolean {

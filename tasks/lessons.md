@@ -1,5 +1,6 @@
 # Lessons
 
+- Do not report development servers as still running based only on an earlier listener check. Before the final handoff, launch them in a detached persistent process and perform fresh HTTP checks after the launch; an attached tool session may terminate when the turn ends.
 - When a browser extension captures a whole tab but the user selects ROI over the HTML video element, always preserve the source video frame size and convert through `videoRect` plus viewport scale at crop time. Letterbox correction alone is not enough.
 - When a Chrome extension uses `tabCapture.getMediaStreamId()` before an interactive ROI step, verify the later offscreen `getUserMedia()` redemption path too. If first redemption can fail after UI delay, keep startup failure single-sourced, retry with a fresh stream id once, and format DOMException-like causes before logging.
 - Do not have untrusted content scripts read `chrome.storage.session` directly for extension-owned state. Use a background/runtime message bridge unless `storage.session.setAccessLevel()` is an intentional product decision.

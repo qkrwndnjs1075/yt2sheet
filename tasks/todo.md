@@ -1,5 +1,98 @@
 # ROI Score Export Pipeline
 
+# 2026-07-29 Restart frontend and backend persistently
+
+## Plan
+
+- [x] Confirm ports 4173 and 4174 have no listeners and review the configured development commands.
+- [x] Start frontend and backend in a detached persistent process.
+- [x] Verify direct frontend, direct backend, and frontend-proxied backend responses; record the process receipt.
+
+## Review
+
+- Started one detached hidden `npm run dev` launcher, PID 23376, so the frontend and backend survive the tool session ending.
+- Frontend is listening on `127.0.0.1:4173` with PID 22308; `GET /` returned HTTP 200.
+- Backend is listening on `127.0.0.1:4174` with PID 8924; direct and frontend-proxied `GET /api/health` both returned HTTP 200 with `{"status":"ok"}`.
+- Startup logs are recorded at `.omo/evidence/servers-20260729-195310.stdout.log`; stderr is empty.
+
+# 2026-07-29 Fix malformed `vzPxNXOp7ac` PDF
+
+## Plan
+
+- [x] Preserve the dirty worktree and record the debugging environment and hypotheses.
+- [x] Render and inspect the supplied PDF in page and score-system order.
+- [x] Reproduce the exact video through the active standalone pipeline and distinguish extraction, crop, identity, and pagination causes.
+- [x] Add a failing regression for the confirmed cause and implement the smallest TypeScript fix.
+- [x] Restart the user-facing backend, regenerate the exact video, and compare the fresh PDF against the supplied artifact.
+- [x] Run focused checks, `npm run verify`, changed-file diagnostics, final PDF rendering, and artifact cleanup.
+
+## Review
+
+- Root cause: transient colored intro overlays passed score detection as distinct candidates, while full-width crops retained the video's pillarboxes. The pipeline now rejects candidates whose detected paper contains a large colored overlay and narrows accepted crops to the horizontal paper bounds.
+- Regression coverage includes a large translucent intro overlay, clean pillarboxed notation, and colored source margins. Focused TypeScript plus processor tests passed 14/14.
+- Exact active-API job `915b1412-f729-4433-8bc3-ef907b1fe12b` accepted only frames 7 and 46 out of 85 and produced one 1200x1700 page. Pipeline processing took 20,442 ms after reusing the analysis RGB buffer.
+- The final PDF is `C:\Users\qkrwn\Downloads\yt2sheet-vzPxNXOp7ac-fixed.pdf`, 268,718 bytes, SHA-256 `735471E357688DF803062ED334B180254BA3C9820B36851E3918B0FF4F703C72`. Fresh rendering confirmed ordered notation with no intro overlays or source pillarboxes.
+- Final verification passed TypeScript, 316/316 tests, the 105-module standalone web build, the 225-module extension build, changed-file diagnostics, and `git diff --check`. Frontend PID 28208 remains on port 4173 and backend PID 24608 remains on port 4174.
+
+# 2026-07-29 Start Frontend and Backend Servers (current run)
+
+## Plan
+
+- [x] Confirm the configured frontend/backend commands and ports.
+- [x] Start the backend server and verify its response.
+- [x] Start the frontend server and verify its response.
+- [x] Record the review evidence.
+
+## Review
+
+- Backend is running on `127.0.0.1:4174` and `GET /api/health` returns HTTP 200 with `{"status":"ok"}`.
+- Frontend is running on `127.0.0.1:4173`; `GET /` returns HTTP 200 and `/api/health` succeeds through the Vite proxy.
+- Active terminal sessions: backend `3308`, frontend `51528`.
+
+
+# 2026-07-29 Near-Perfect Score Extraction Research
+
+## Plan
+
+- [x] Map the current standalone extraction pipeline, test corpus, and known failure modes.
+- [x] Research current academic and open-source methods for temporal sampling, score-region detection, normalization, OMR-aware identity, and confidence estimation.
+- [x] Challenge feasibility claims and define measurable quality targets with abstention/review boundaries.
+- [x] Synthesize a staged architecture and implementation roadmap for yt2sheet.
+
+## Review
+
+- The primary bottlenecks are uniform temporal sampling and global first-wins identity; page packing preserves the accepted order and is not the first optimization target.
+- Recommended architecture: adaptive candidate generation, score-region/state tracking, rollback-safe scroll mosaicing, staff-normalized multi-channel identity, quality representative selection, immutable provenance, and calibrated `PASS / REVIEW / FAIL` gates.
+- Quality claims remain disabled until a source-disjoint real-video corpus evaluates actual crop, identity, occurrence order, PDF artifacts, runtime, selective risk, and worst-group performance.
+- Detailed synthesis: `.omo/ulw-research/20260729-133841/SYNTHESIS.md`; responsive HTML summary and fresh captures: `REPORT.html`, `report-desktop.png`, and `report-mobile.png` in the same directory.
+- This research task changed no production frontend or backend code.
+
+# 2026-07-29 Start Frontend and Backend Servers
+
+## Plan
+
+- [x] Confirm the configured frontend/backend commands and ports.
+- [x] Start the frontend and backend development servers.
+- [x] Verify both listeners and HTTP responses.
+
+## Review
+
+- Existing listeners were reused: Vite frontend PID 25288 on `127.0.0.1:4173` and tsx backend PID 27308 on `127.0.0.1:4174`.
+- `GET /` returned HTTP 200 from the frontend.
+- `GET /api/health` returned `{"status":"ok"}` directly and through the frontend proxy.
+
+# 2026-07-29 Phase 0 Benchmark Claim Gate
+
+## Active implementation
+
+- [x] Lock the quality-sidecar/benchmark boundary: current benchmark evidence records sampling only and cannot authorize quality claims.
+- [x] Extend the benchmark CLI regression with manifest-backed group, split, and tag facts plus an external-gated underqualification path.
+
+## Review
+
+- [x] Parsed benchmark run, summary, case, evidence, and failure artifacts in the focused CLI test; the smoke corpus remains mechanics-only with quality claims disabled.
+- [x] Recorded focused build/test/typecheck results and artifact facts in `.omo/evidence/score-quality-baseline/task-5-claim-gate.json`.
+
 # G050 Restore Single Legacy PDF Output (2026-07-24)
 
 ## Plan

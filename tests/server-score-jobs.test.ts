@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createScoreJobApp } from "../server/app";
+import { createScoreExtractionQualityReport, deriveScoreQualitySidecarPath, serializeScoreExtractionQualityReport } from "../server/score-quality-report";
 import { ScoreJobService, ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor } from "../server/score-job-service";
 
 // allow: SIZE_OK - reviewed Todo 2 requires its named RED/GREEN cases in this focused service test file.
@@ -112,7 +113,12 @@ describe("score job API", () => {
     const resultsRoot = join(dataRoot, "results");
     await mkdir(resultsRoot, { recursive: true });
     const resultPath = join(resultsRoot, ownedResultName());
+    const sidecarPath = deriveScoreQualitySidecarPath(resultPath);
     await writeFile(resultPath, "%PDF-test");
+    await writeFile(sidecarPath, serializeScoreExtractionQualityReport(createScoreExtractionQualityReport({
+      durationsMs: { analysis: 1, deduplication: 2, pageComposition: 3, total: 6 },
+      frames: [{ frameId: "frame-000001", disposition: "accepted", scoreId: "score-0001", pageNumber: 1 }]
+    })));
     const observedInputs: ScoreJobInput[] = [];
     const openedHandles: FileHandle[] = [];
     const service = new ScoreJobService({
@@ -160,7 +166,8 @@ describe("score job API", () => {
     const downloadResponse = await app.request("http://localhost/api/score-jobs/job-success/download");
     assert.equal(downloadResponse.status, 200);
     assert.equal(downloadResponse.headers.get("content-type"), "application/pdf");
-    assert.deepEqual(Buffer.from(await downloadResponse.arrayBuffer()), await readFile(resultPath));
+    assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
+    assert.equal(JSON.parse(await readFile(sidecarPath, "utf8")).version, "score-extraction-quality-report/1");
     assert.equal(openedHandles.every((handle) => handle.fd === -1), true);
     assert.deepEqual(await (await app.request("http://localhost/api/score-jobs/missing/download")).json(), {
       error: { code: "JOB_NOT_FOUND", message: "작업이 중단되었거나 만료되었습니다." }
@@ -518,7 +525,7 @@ describe("score job result ownership", () => {
     assert.equal(openedHandles[0]?.fd, -1);
   });
 
-  it("expires the map entry before deleting only a validated owned file", async (t) => {
+  it("expires the map entry before deleting a validated owned PDF", async (t) => {
     const fixture = await resultFixture(t);
     const scheduled: Array<() => Promise<void>> = [];
     const resultPath = join(fixture.resultsRoot, ownedResultName());
@@ -541,6 +548,166 @@ describe("score job result ownership", () => {
     await expiry;
     await assert.rejects(lstat(resultPath), { code: "ENOENT" });
   });
+
+  it("preserves a replacement inserted at the owned PDF path before expiry", async (t) => {
+    const fixture = await resultFixture(t);
+    const scheduled: Array<() => Promise<void>> = [];
+    const resultPath = join(fixture.resultsRoot, ownedResultName());
+    const sidecarPath = deriveScoreQualitySidecarPath(resultPath);
+    const replacementPath = join(fixture.resultsRoot, "replacement-pdf.tmp");
+    const sentinel = "%PDF-replacement-sentinel\n";
+    await writeFile(resultPath, "original-pdf");
+    await writeFile(sidecarPath, "original-sidecar");
+    const originalStats = await lstat(resultPath, { bigint: true });
+    const service = new ScoreJobService(successfulProcessor(resultPath), {
+      createId: () => "job-pdf-replacement", dataRoot: fixture.dataRoot,
+      scheduler: { schedule: (task) => {
+        scheduled.push(task);
+        return { cancel: () => {} };
+      } }
+    });
+    service.admit(jobInput("aaaaaaaaaaa"));
+    await service.whenIdle();
+
+    await writeFile(replacementPath, sentinel);
+    await rm(resultPath);
+    await rename(replacementPath, resultPath);
+    const replacementStats = await lstat(resultPath, { bigint: true });
+    assert.equal(replacementStats.isFile(), true);
+    assert.equal(replacementStats.isSymbolicLink(), false);
+    assert.notDeepEqual(
+      { dev: replacementStats.dev, ino: replacementStats.ino },
+      { dev: originalStats.dev, ino: originalStats.ino }
+    );
+
+    await scheduled[0]?.();
+
+    const replacementContents = await readFile(resultPath, "utf8");
+    assert.equal(replacementContents, sentinel);
+    await assert.rejects(lstat(sidecarPath), { code: "ENOENT" });
+    t.diagnostic(JSON.stringify({
+      fixtureRoot: fixture.root,
+      originalPdf: { dev: originalStats.dev.toString(), ino: originalStats.ino.toString() },
+      replacementPdf: {
+        dev: replacementStats.dev.toString(),
+        ino: replacementStats.ino.toString(),
+        isFile: replacementStats.isFile(),
+        isSymbolicLink: replacementStats.isSymbolicLink()
+      },
+      sentinel: replacementContents,
+      sentinelHex: Buffer.from(replacementContents).toString("hex"),
+      matchingSidecarRemoved: true
+    }));
+  });
+
+  it("deletes the original matching paired sidecar when the owned PDF expires", async (t) => {
+    const fixture = await resultFixture(t);
+    const scheduled: Array<() => Promise<void>> = [];
+    const resultPath = join(fixture.resultsRoot, ownedResultName());
+    const sidecarPath = deriveScoreQualitySidecarPath(resultPath);
+    await writeFile(resultPath, "owned");
+    await writeFile(sidecarPath, "paired");
+    const service = new ScoreJobService(successfulProcessor(resultPath), {
+      createId: () => "job-sidecar-expire", dataRoot: fixture.dataRoot,
+      scheduler: { schedule: (task) => {
+        scheduled.push(task);
+        return { cancel: () => {} };
+      } }
+    });
+    service.admit(jobInput("aaaaaaaaaaa"));
+    await service.whenIdle();
+
+    await scheduled[0]?.();
+
+    await assert.rejects(lstat(resultPath), { code: "ENOENT" });
+    await assert.rejects(lstat(sidecarPath), { code: "ENOENT" });
+  });
+
+  it("preserves a replacement inserted at the paired sidecar path before expiry", async (t) => {
+    const fixture = await resultFixture(t);
+    const scheduled: Array<() => Promise<void>> = [];
+    const resultPath = join(fixture.resultsRoot, ownedResultName());
+    const sidecarPath = deriveScoreQualitySidecarPath(resultPath);
+    const replacementPath = join(fixture.resultsRoot, "replacement-sidecar.tmp");
+    const sentinel = "replacement-sidecar-sentinel\n";
+    await writeFile(resultPath, "owned");
+    await writeFile(sidecarPath, "original-sidecar");
+    const originalStats = await lstat(sidecarPath, { bigint: true });
+    const service = new ScoreJobService(successfulProcessor(resultPath), {
+      createId: () => "job-sidecar-replacement", dataRoot: fixture.dataRoot,
+      scheduler: { schedule: (task) => {
+        scheduled.push(task);
+        return { cancel: () => {} };
+      } }
+    });
+    service.admit(jobInput("aaaaaaaaaaa"));
+    await service.whenIdle();
+
+    await writeFile(replacementPath, sentinel);
+    await rm(sidecarPath);
+    await rename(replacementPath, sidecarPath);
+    const replacementStats = await lstat(sidecarPath, { bigint: true });
+    assert.equal(replacementStats.isFile(), true);
+    assert.equal(replacementStats.isSymbolicLink(), false);
+    assert.notDeepEqual(
+      { dev: replacementStats.dev, ino: replacementStats.ino },
+      { dev: originalStats.dev, ino: originalStats.ino }
+    );
+
+    await scheduled[0]?.();
+
+    await assert.rejects(lstat(resultPath), { code: "ENOENT" });
+    const replacementContents = await readFile(sidecarPath, "utf8");
+    assert.equal(replacementContents, sentinel);
+    t.diagnostic(JSON.stringify({
+      fixtureRoot: fixture.root,
+      originalSidecar: { dev: originalStats.dev.toString(), ino: originalStats.ino.toString() },
+      replacementSidecar: {
+        dev: replacementStats.dev.toString(),
+        ino: replacementStats.ino.toString(),
+        isFile: replacementStats.isFile(),
+        isSymbolicLink: replacementStats.isSymbolicLink()
+      },
+      sentinel: replacementContents,
+      sentinelHex: Buffer.from(replacementContents).toString("hex")
+    }));
+  });
+
+  for (const scenario of ["directory", "symlink"]) {
+    it(`does not capture or delete a ${scenario} at the paired sidecar path`, async (t) => {
+      const fixture = await resultFixture(t);
+      const scheduled: Array<() => Promise<void>> = [];
+      const resultPath = join(fixture.resultsRoot, ownedResultName());
+      const sidecarPath = deriveScoreQualitySidecarPath(resultPath);
+      const externalSidecar = join(fixture.root, "external-sidecar");
+      await writeFile(resultPath, "owned");
+      if (scenario === "directory") {
+        await mkdir(sidecarPath);
+      } else {
+        await mkdir(externalSidecar);
+        await writeFile(join(externalSidecar, "sentinel.txt"), "external-sentinel");
+        await symlink(externalSidecar, sidecarPath, "junction");
+      }
+      const service = new ScoreJobService(successfulProcessor(resultPath), {
+        createId: () => `job-sidecar-${scenario}`, dataRoot: fixture.dataRoot,
+        scheduler: { schedule: (task) => {
+          scheduled.push(task);
+          return { cancel: () => {} };
+        } }
+      });
+      service.admit(jobInput("aaaaaaaaaaa"));
+      await service.whenIdle();
+
+      await scheduled[0]?.();
+
+      await assert.rejects(lstat(resultPath), { code: "ENOENT" });
+      const sidecarStats = await lstat(sidecarPath);
+      assert.equal(scenario === "directory" ? sidecarStats.isDirectory() : sidecarStats.isSymbolicLink(), true);
+      if (scenario === "symlink") {
+        assert.equal(await readFile(join(externalSidecar, "sentinel.txt"), "utf8"), "external-sentinel");
+      }
+    });
+  }
 });
 
 function jobInput(videoId: string) {

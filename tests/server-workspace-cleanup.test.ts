@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import fs, { type PathLike } from "node:fs";
+import { access, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -122,6 +123,152 @@ describe("startup workspace cleanup", () => {
     assert.equal(await readFile(arbitrary, "utf8"), "arbitrary");
   });
 
+  it("removes a stale owned PDF result", async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "yt2sheet-stale-pdf-cleanup-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const dataRoot = join(directory, "data");
+    const resultsRoot = join(dataRoot, "results");
+    await mkdir(resultsRoot, { recursive: true });
+    const deadOwner = spawn(process.execPath, ["-e", "process.exit(0)"], { windowsHide: true });
+    assert.ok(deadOwner.pid);
+    const deadPid = deadOwner.pid;
+    await once(deadOwner, "exit");
+    const staleResult = join(resultsRoot, ownedResultName(deadPid));
+    await writeFile(staleResult, "stale");
+
+    await cleanupOwnedResultFiles(dataRoot);
+
+    await assert.rejects(lstat(staleResult), { code: "ENOENT" });
+  });
+
+  it("removes a stale owned PDF result with its quality sidecar", async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "yt2sheet-stale-sidecar-cleanup-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const dataRoot = join(directory, "data");
+    const resultsRoot = join(dataRoot, "results");
+    await mkdir(resultsRoot, { recursive: true });
+    const deadOwner = spawn(process.execPath, ["-e", "process.exit(0)"], { windowsHide: true });
+    assert.ok(deadOwner.pid);
+    const deadPid = deadOwner.pid;
+    await once(deadOwner, "exit");
+    const staleResult = join(resultsRoot, ownedResultName(deadPid));
+    const staleSidecar = `${staleResult}.quality.json`;
+    const sentinelPdf = join(resultsRoot, "user-managed.pdf");
+    const sentinelJson = join(resultsRoot, "user-managed.pdf.quality.json");
+    const malformedSidecar = join(resultsRoot, `yt2sheet-result-p${deadPid}-malformed.pdf.quality.json`);
+    await Promise.all([
+      writeFile(staleResult, "stale"),
+      writeFile(staleSidecar, "{\"quality\":0.9}"),
+      writeFile(sentinelPdf, "sentinel"),
+      writeFile(sentinelJson, "{\"sentinel\":true}"),
+      writeFile(malformedSidecar, "{\"malformed\":true}")
+    ]);
+
+    await cleanupOwnedResultFiles(dataRoot);
+
+    await assert.rejects(lstat(staleResult), { code: "ENOENT" });
+    await assert.rejects(lstat(staleSidecar), { code: "ENOENT" });
+    assert.equal((await lstat(sentinelPdf)).isFile(), true);
+    assert.equal((await lstat(sentinelJson)).isFile(), true);
+    assert.equal((await lstat(malformedSidecar)).isFile(), true);
+  });
+
+  it("preserves validated PDF and sidecar replacements while deleting an untouched stale pair", async (t) => {
+    // Given: three stale dead-owner pairs and a deterministic lstat seam that replaces two candidates after validation.
+    const directory = await mkdtemp(join(tmpdir(), "yt2sheet-startup-replacement-race-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const dataRoot = join(directory, "data");
+    const resultsRoot = join(dataRoot, "results");
+    await mkdir(resultsRoot, { recursive: true });
+    const deadOwner = spawn(process.execPath, ["-e", "process.exit(0)"], { windowsHide: true });
+    assert.ok(deadOwner.pid);
+    const deadPid = deadOwner.pid;
+    await once(deadOwner, "exit");
+    const replacedPdf = join(resultsRoot, ownedResultName(deadPid, "123e4567-e89b-42d3-a456-426614174001"));
+    const sidecarOwner = join(resultsRoot, ownedResultName(deadPid, "123e4567-e89b-42d3-a456-426614174002"));
+    const replacedSidecar = `${sidecarOwner}.quality.json`;
+    const untouchedPdf = join(resultsRoot, ownedResultName(deadPid, "123e4567-e89b-42d3-a456-426614174003"));
+    const untouchedSidecar = `${untouchedPdf}.quality.json`;
+    await Promise.all([
+      writeFile(replacedPdf, "%PDF-owned"),
+      writeFile(`${replacedPdf}.quality.json`, "owned-paired-sidecar"),
+      writeFile(sidecarOwner, "%PDF-owned"),
+      writeFile(replacedSidecar, "owned-sidecar"),
+      writeFile(untouchedPdf, "%PDF-owned"),
+      writeFile(untouchedSidecar, "owned-sidecar")
+    ]);
+    const replacementContents = new Map([
+      [replacedPdf, "%PDF-replacement"],
+      [replacedSidecar, "sidecar-replacement"]
+    ]);
+    const originalIdentities = new Map<string, { readonly device: string; readonly inode: string }>();
+    const originalLstat = fs.promises.lstat.bind(fs.promises);
+    t.mock.method(fs.promises, "lstat", async (path: PathLike) => {
+      const stats = await originalLstat(path);
+      if (typeof path === "string") {
+        const replacementContent = replacementContents.get(path);
+        if (replacementContent !== undefined && !originalIdentities.has(path)) {
+          originalIdentities.set(path, { device: stats.dev.toString(), inode: stats.ino.toString() });
+          await rename(path, `${path}.owned-original`);
+          await writeFile(path, replacementContent);
+        }
+      }
+      return stats;
+    });
+
+    // When: startup cleanup validates and then attempts to remove each stale pair.
+    await cleanupOwnedResultFiles(dataRoot);
+
+    // Then: replacements differ by identity and content, the PDF-gated sidecar remains, and the untouched pair is gone.
+    for (const [path, expectedContent] of replacementContents) {
+      const original = originalIdentities.get(path);
+      assert.ok(original);
+      const replacement = await originalLstat(path, { bigint: true });
+      assert.notDeepEqual(
+        [replacement.dev.toString(), replacement.ino.toString()],
+        [original.device, original.inode]
+      );
+      assert.equal(await readFile(path, "utf8"), expectedContent);
+      t.diagnostic(JSON.stringify({
+        artifact: path === replacedPdf ? "startup-pdf" : "startup-sidecar",
+        original,
+        replacement: { device: replacement.dev.toString(), inode: replacement.ino.toString() },
+        content: expectedContent
+      }));
+    }
+    assert.equal(await readFile(`${replacedPdf}.quality.json`, "utf8"), "owned-paired-sidecar");
+    await assert.rejects(originalLstat(sidecarOwner), { code: "ENOENT" });
+    await assert.rejects(originalLstat(untouchedPdf), { code: "ENOENT" });
+    await assert.rejects(originalLstat(untouchedSidecar), { code: "ENOENT" });
+    t.diagnostic(JSON.stringify({ untouchedPairRemoved: true }));
+  });
+
+  it("removes an interrupted dead-owner quality sidecar temporary file while preserving similar paths", async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "yt2sheet-stale-sidecar-temporary-cleanup-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const dataRoot = join(directory, "data");
+    const resultsRoot = join(dataRoot, "results");
+    await mkdir(resultsRoot, { recursive: true });
+    const deadOwner = spawn(process.execPath, ["-e", "process.exit(0)"], { windowsHide: true });
+    assert.ok(deadOwner.pid);
+    const deadPid = deadOwner.pid;
+    await once(deadOwner, "exit");
+    const interruptedTemporary = join(resultsRoot, qualitySidecarTemporaryName(deadPid));
+    const liveTemporary = join(resultsRoot, qualitySidecarTemporaryName(process.pid));
+    const malformedTemporary = join(resultsRoot, `yt2sheet-result-p${deadPid}-malformed.pdf.quality.json.123e4567-e89b-42d3-a456-426614174000.tmp`);
+    await Promise.all([
+      writeFile(interruptedTemporary, "partial"),
+      writeFile(liveTemporary, "live"),
+      writeFile(malformedTemporary, "malformed")
+    ]);
+
+    await cleanupOwnedResultFiles(dataRoot);
+
+    await assert.rejects(lstat(interruptedTemporary), { code: "ENOENT" });
+    assert.equal(await readFile(liveTemporary, "utf8"), "live");
+    assert.equal(await readFile(malformedTemporary, "utf8"), "malformed");
+  });
+
   it("removes only legacy UUID results older than one hour", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "yt2sheet-legacy-cleanup-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
@@ -205,8 +352,12 @@ describe("startup workspace cleanup", () => {
   });
 });
 
-function ownedResultName(ownerPid: number): string {
-  return `yt2sheet-result-p${ownerPid}-123e4567-e89b-42d3-a456-426614174000.pdf`;
+function ownedResultName(ownerPid: number, runId = "123e4567-e89b-42d3-a456-426614174000"): string {
+  return `yt2sheet-result-p${ownerPid}-${runId}.pdf`;
+}
+
+function qualitySidecarTemporaryName(ownerPid: number): string {
+  return `${ownedResultName(ownerPid)}.quality.json.123e4567-e89b-42d3-a456-426614174000.tmp`;
 }
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {

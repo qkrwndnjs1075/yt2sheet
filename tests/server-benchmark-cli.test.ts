@@ -5,12 +5,49 @@ import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
+import { z } from "zod";
 import { corpusManifestSchema } from "../server/benchmark/corpus-schema";
 import { BenchmarkRunError, canonicalJson } from "../server/benchmark/runner";
 
 const FIXTURE_ROOT = resolve("tests/fixtures/score-corpus/v1");
 const PLAN_PATH = resolve("benchmarks/plans/score-pipeline-v1.json");
-const STABLE_FILES = ["run.json", "rights-audit.json", "cases.jsonl", "summary.json", "failures.jsonl"] as const;
+const STABLE_FILES = ["run.json", "rights-audit.json", "cases.jsonl", "summary.json", "failures.jsonl", "evidence.jsonl"] as const;
+const splitSchema = z.union([z.literal("smoke"), z.literal("calibration"), z.literal("test")]);
+const runRecordSchema = z.object({
+  claimTier: z.union([z.literal("mechanics-only"), z.literal("external-gated")]),
+  qualityClaimsAllowed: z.boolean(),
+}).passthrough();
+const summaryRecordSchema = z.object({
+  groupCount: z.number().int().nonnegative(),
+  splitGroupCounts: z.object({ smoke: z.number().int().nonnegative(), calibration: z.number().int().nonnegative(), test: z.number().int().nonnegative() }).strict(),
+  requiredTagTestGroupCounts: z.record(z.string(), z.number().int().nonnegative()),
+  eligible: z.boolean(),
+}).passthrough();
+const caseRecordSchema = z.object({
+  assetId: z.string().min(1),
+  sourceGroupId: z.string().min(1),
+  split: splitSchema,
+  classTags: z.array(z.string().min(1)),
+}).passthrough();
+const failureRecordSchema = z.object({
+  code: z.union([z.literal("EXTERNAL_INELIGIBLE"), z.literal("PROMOTION_GATE_FAILED")]),
+  message: z.string().min(1),
+}).passthrough();
+const evidenceRecordSchema = z.object({
+  schemaVersion: z.literal("score-benchmark-evidence/1"),
+  runDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  assetId: z.string().min(1),
+  sourceGroupId: z.string().min(1),
+  split: splitSchema,
+  classTags: z.array(z.string().min(1)),
+  variant: z.union([z.literal("control"), z.literal("treatment")]),
+  sampling: z.object({
+    budget: z.number().int().nonnegative(),
+    timestampsMs: z.array(z.number().int().nonnegative()),
+    candidateCount: z.number().int().nonnegative(),
+  }),
+  pipelineExecution: z.literal("not-run"),
+}).strict();
 
 test("returns the strict usage error when the benchmark CLI receives an unknown option", () => {
   // Given the public package-script CLI surface.
@@ -55,8 +92,31 @@ test("writes byte-identical stable mechanics artifacts under two output roots", 
   assert.notDeepEqual(await readFile(join(firstDirectory.path, "run-volatile.json")), await readFile(join(secondDirectory.path, "run-volatile.json")));
   const runText = await readFile(join(firstDirectory.path, "run.json"), "utf8");
   const casesText = await readFile(join(firstDirectory.path, "cases.jsonl"), "utf8");
-  assert.match(runText, /"claimTier":"mechanics-only"/);
-  assert.match(runText, /"qualityClaimsAllowed":false/);
+  const evidenceText = await readFile(join(firstDirectory.path, "evidence.jsonl"), "utf8");
+  const summaryText = await readFile(join(firstDirectory.path, "summary.json"), "utf8");
+  const runRecord = runRecordSchema.parse(JSON.parse(runText));
+  const summaryRecord = summaryRecordSchema.parse(JSON.parse(summaryText));
+  const caseRecords = casesText.split(/\r?\n/).filter((line) => line.length > 0)
+    .map((line) => caseRecordSchema.parse(JSON.parse(line)));
+  const evidenceRecords = evidenceText.split(/\r?\n/).filter((line) => line.length > 0)
+    .map((line) => evidenceRecordSchema.parse(JSON.parse(line)));
+  const manifest = await readManifest(FIXTURE_ROOT);
+  const assetIds = manifest.assets.map((asset) => asset.assetId).sort();
+  assert.equal(runRecord.claimTier, "mechanics-only");
+  assert.equal(runRecord.qualityClaimsAllowed, false);
+  assert.equal(summaryRecord.eligible, false);
+  assert.equal(summaryRecord.groupCount, new Set(manifest.assets.map((asset) => asset.sourceGroupId)).size);
+  assert.deepEqual(summaryRecord.splitGroupCounts, splitGroupCounts(manifest.assets));
+  const plan = z.object({ requiredClassTags: z.array(z.string().min(1)).min(1) }).passthrough()
+    .parse(JSON.parse(await readFile(PLAN_PATH, "utf8")));
+  const expectedRequiredTagTestGroupCounts = Object.fromEntries(plan.requiredClassTags.map((tag) => [tag,
+    new Set(manifest.assets.filter((asset) => asset.split === "test" && asset.classTags.some((classTag) => classTag === tag))
+      .map((asset) => asset.sourceGroupId)).size]));
+  assert.deepEqual(summaryRecord.requiredTagTestGroupCounts, expectedRequiredTagTestGroupCounts);
+  assert.deepEqual(groupTagCounts(caseRecords), groupTagCounts(manifest.assets));
+  assert.deepEqual(caseRecords.map(({ assetId, sourceGroupId, split, classTags }) => ({ assetId, sourceGroupId, split, classTags })),
+    [...manifest.assets].sort((left, right) => left.assetId.localeCompare(right.assetId))
+      .map(({ assetId, sourceGroupId, split, classTags }) => ({ assetId, sourceGroupId, split, classTags })));
   assert.match(runText, /"relativePath":"server\/youtube-score-processor\.ts"/);
   const youtubeSource = await readFile(resolve("server/youtube-score-processor.ts"));
   const youtubeSha256 = createHash("sha256").update(youtubeSource).digest("hex");
@@ -68,6 +128,18 @@ test("writes byte-identical stable mechanics artifacts under two output roots", 
   }
   assert.doesNotMatch(runText, /[A-Z]:\\/i);
   assert.match(casesText, /"runtimeMs":0/);
+  assert.equal(evidenceRecords.length, assetIds.length * 2);
+  assert.deepEqual(evidenceRecords.map((record) => `${record.assetId}:${record.variant}`), assetIds.flatMap((assetId) =>
+    [`${assetId}:control`, `${assetId}:treatment`]));
+  for (const record of evidenceRecords) {
+    assert.equal(record.runDigest, firstDirectory.digest);
+    assert.equal(record.pipelineExecution, "not-run");
+    assert.equal(record.sampling.candidateCount, record.sampling.timestampsMs.length);
+    assert.ok(record.sampling.timestampsMs.every((timestampMs, index, timestampsMs) => {
+      const previousTimestampMs = timestampsMs[index - 1];
+      return previousTimestampMs === undefined || previousTimestampMs <= timestampMs;
+    }));
+  }
   const sourceHashes = [...runText.matchAll(/"assetId":"(?:external-owned|synthetic-score)","sha256":"([0-9a-f]{64})"/g)].map((match) => match[1]);
   assert.equal(new Set(sourceHashes).size, 2);
   const emittedNames = await readdir(firstDirectory.path);
@@ -105,7 +177,7 @@ test("rejects blocked rights with exit 2 and no success artifacts", async (t) =>
   assert.deepEqual(await readdir(outputRoot), []);
 });
 
-test("completes metrics but exits 4 for an ineligible external locked-test manifest", async (t) => {
+test("completes metrics but exits 4 for an external-gated manifest whose corpus is underqualified", async (t) => {
   // Given a temporary manifest that explicitly requests external test evaluation with only one group.
   const corpusRoot = await copyCorpus(t);
   const manifest = await readManifest(corpusRoot);
@@ -122,10 +194,19 @@ test("completes metrics but exits 4 for an ineligible external locked-test manif
   const directory = await digestDirectory(outputRoot);
   const runText = await readFile(join(directory.path, "run.json"), "utf8");
   const summaryText = await readFile(join(directory.path, "summary.json"), "utf8");
-  assert.match(runText, /"claimTier":"external-gated"/);
-  assert.match(runText, /"qualityClaimsAllowed":false/);
-  assert.match(summaryText, /"eligible":false/);
-  assert.notEqual((await stat(join(directory.path, "failures.jsonl"))).size, 0);
+  const failuresText = await readFile(join(directory.path, "failures.jsonl"), "utf8");
+  const runRecord = runRecordSchema.parse(JSON.parse(runText));
+  const summaryRecord = summaryRecordSchema.parse(JSON.parse(summaryText));
+  const failures = failuresText.split(/\r?\n/).filter((line) => line.length > 0)
+    .map((line) => failureRecordSchema.parse(JSON.parse(line)));
+  assert.equal(runRecord.claimTier, "external-gated");
+  assert.equal(runRecord.qualityClaimsAllowed, false);
+  assert.equal(summaryRecord.eligible, false);
+  assert.ok(summaryRecord.groupCount < 30);
+  assert.ok(summaryRecord.splitGroupCounts.calibration < 10);
+  assert.ok(summaryRecord.splitGroupCounts.test < 20);
+  assert.ok(Object.values(summaryRecord.requiredTagTestGroupCounts).some((count) => count < 5));
+  assert.ok(failures.some((failure) => failure.code === "EXTERNAL_INELIGIBLE" && failure.message === "external-eligibility"));
 });
 
 test("rejects a changed or extended immutable benchmark plan", async (t) => {
@@ -191,6 +272,28 @@ async function copyCorpus(t: TestContext): Promise<string> {
 async function readManifest(root: string) {
   const raw: unknown = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
   return corpusManifestSchema.parse(raw);
+}
+
+function splitGroupCounts(records: readonly { readonly sourceGroupId: string; readonly split: z.infer<typeof splitSchema> }[]) {
+  const groups = new Map(records.map((record) => [record.sourceGroupId, record.split]));
+  return {
+    smoke: [...groups.values()].filter((split) => split === "smoke").length,
+    calibration: [...groups.values()].filter((split) => split === "calibration").length,
+    test: [...groups.values()].filter((split) => split === "test").length,
+  };
+}
+
+function groupTagCounts(records: readonly { readonly sourceGroupId: string; readonly classTags: readonly string[] }[]) {
+  const groupsByTag = new Map<string, Set<string>>();
+  for (const record of records) {
+    for (const classTag of record.classTags) {
+      const groups = groupsByTag.get(classTag) ?? new Set<string>();
+      groups.add(record.sourceGroupId);
+      groupsByTag.set(classTag, groups);
+    }
+  }
+  return Object.fromEntries([...groupsByTag.entries()].sort(([left], [right]) => left.localeCompare(right))
+    .map(([classTag, groups]) => [classTag, groups.size]));
 }
 
 async function digestDirectory(outputRoot: string): Promise<{ readonly digest: string; readonly path: string }> {

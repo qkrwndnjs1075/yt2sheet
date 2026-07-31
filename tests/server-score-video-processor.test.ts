@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import sharp from "sharp";
 import { hammingDistance } from "../server/score-analysis";
 import { createDominantInkHash, normalizeScoreImage } from "../server/score-image-normalizer";
+import { serializeScoreExtractionQualityReport, type ScoreExtractionQualityReport } from "../server/score-quality-report";
 import { createScorePdfFromFrames, roundCrop } from "../server/score-video-processor";
 
 describe("score video processor", () => {
@@ -28,6 +29,100 @@ describe("score video processor", () => {
     assert.equal(result.pageCount, 1);
     assert.equal(pdf.subarray(0, 5).toString("ascii"), "%PDF-");
     assert.ok(pdf.length > 1_000);
+  });
+
+  it("emits one quality disposition per frame without changing PDF bytes or exports", async (t) => {
+    // Given: one no-score frame, two distinct scores, and an exact duplicate.
+    const directory = await createTempDirectory(t, "yt2sheet-quality-report-");
+    const blank = join(directory, "frame-1.png");
+    const first = join(directory, "frame-2.png");
+    const duplicate = join(directory, "frame-3.png");
+    const changed = join(directory, "frame-4.png");
+    const withoutReportPath = join(directory, "without-report.pdf");
+    const withReportPath = join(directory, "with-report.pdf");
+    const reportPath = join(directory, "quality.json");
+    await Promise.all([
+      writeBlankFrame(blank),
+      writeScoreFrame(first, 150),
+      writeScoreFrame(duplicate, 150),
+      writeScoreFrame(changed, 650)
+    ]);
+
+    // When: the same fixed-metadata pipeline runs without and with an awaited report sink.
+    const withoutReport = await createScorePdfFromFrames(
+      [blank, first, duplicate, changed],
+      directory,
+      withoutReportPath,
+      { ...pdfOptions(), nowMs: fixedNowMs() }
+    );
+    let collectedReport: ScoreExtractionQualityReport | undefined;
+    let sinkCompleted = false;
+    const withReport = await createScorePdfFromFrames(
+      [blank, first, duplicate, changed],
+      directory,
+      withReportPath,
+      {
+        ...pdfOptions(),
+        nowMs: fixedNowMs(),
+        async qualityReportSink(report) {
+          collectedReport = report;
+          await writeFile(reportPath, serializeScoreExtractionQualityReport(report));
+          sinkCompleted = true;
+        }
+      }
+    );
+
+    // Then: the report covers every decision and accepted page while output stays identical.
+    const withoutReportPdf = await readFile(withoutReportPath);
+    const withReportPdf = await readFile(withReportPath);
+    assert.deepEqual(withoutReport, { pageCount: 1, scoreCount: 2 });
+    assert.deepEqual(withReport, withoutReport);
+    assert.equal(Buffer.compare(withoutReportPdf, withReportPdf), 0);
+    assert.equal(sinkCompleted, true);
+    assert.ok(collectedReport);
+    assert.deepEqual(collectedReport.durationsMs, {
+      analysis: 10,
+      deduplication: 10,
+      pageComposition: 0,
+      total: 70
+    });
+    assert.deepEqual(collectedReport.frames, [
+      { frameId: "frame-000001", disposition: "no-score" },
+      { frameId: "frame-000002", disposition: "accepted", scoreId: "score-0001", pageNumber: 1 },
+      { frameId: "frame-000003", disposition: "duplicate", duplicateReason: "near-duplicate" },
+      { frameId: "frame-000004", disposition: "accepted", scoreId: "score-0002", pageNumber: 1 }
+    ]);
+    const serializedReport = serializeScoreExtractionQualityReport(collectedReport);
+    assert.equal(await readFile(reportPath, "utf8"), serializedReport);
+    const parsedReport: unknown = JSON.parse(await readFile(reportPath, "utf8"));
+    assert.deepEqual(parsedReport, collectedReport);
+    assert.doesNotMatch(serializedReport, /\"(?:image|path)\"\s*:/);
+    assert.equal(serializedReport.includes(directory), false);
+    assert.equal(serializedReport.includes("frame-1.png"), false);
+    assert.equal(serializedReport.includes("score-0002.png"), false);
+    assert.deepEqual(await readdir(join(directory, "scores")), ["score-0002.png", "score-0004.png"]);
+    t.diagnostic(JSON.stringify({
+      manualQaArtifact: {
+        reportPath,
+        withoutReportPath,
+        withReportPath,
+        inputFrameCount: 4,
+        reportFrameCount: collectedReport.frames.length,
+        dispositions: {
+          noScore: collectedReport.frames.filter((frame) => frame.disposition === "no-score").length,
+          accepted: collectedReport.frames.filter((frame) => frame.disposition === "accepted").length,
+          duplicate: collectedReport.frames.filter((frame) => frame.disposition === "duplicate").length
+        },
+        acceptedPageMappings: collectedReport.frames
+          .filter((frame) => frame.disposition === "accepted")
+          .map((frame) => ({ scoreId: frame.scoreId, pageNumber: frame.pageNumber })),
+        unexportedDispositionCount: collectedReport.frames.filter((frame) => frame.disposition !== "accepted").length,
+        pdfHeaders: [withoutReportPdf, withReportPdf].map((pdf) => pdf.subarray(0, 5).toString("ascii")),
+        pdfBytes: [withoutReportPdf.length, withReportPdf.length],
+        byteIdentical: Buffer.compare(withoutReportPdf, withReportPdf) === 0,
+        sinkCompleted
+      }
+    }));
   });
 
   it("keeps the original high-resolution score crop for PDF composition", async (t) => {
@@ -113,9 +208,21 @@ describe("score video processor", () => {
       writeScoreFrameWithPadding(second, 72, false)
     ]);
 
-    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), pdfOptions());
+    let collectedReport: ScoreExtractionQualityReport | undefined;
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), {
+      ...pdfOptions(),
+      async qualityReportSink(report) {
+        collectedReport = report;
+      }
+    });
 
     assert.equal(result.scoreCount, 1);
+    assert.ok(collectedReport);
+    assert.deepEqual(collectedReport.frames[1], {
+      frameId: "frame-000002",
+      disposition: "duplicate",
+      duplicateReason: "dominant-ink"
+    });
   });
 
   it("deduplicates the same notation when the playback overlay moves", async (t) => {
@@ -127,9 +234,21 @@ describe("score video processor", () => {
       writeScoreFrameWithPlaybackOverlay(second, 680)
     ]);
 
-    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), pdfOptions());
+    let collectedReport: ScoreExtractionQualityReport | undefined;
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), {
+      ...pdfOptions(),
+      async qualityReportSink(report) {
+        collectedReport = report;
+      }
+    });
 
     assert.equal(result.scoreCount, 1);
+    assert.ok(collectedReport);
+    assert.deepEqual(collectedReport.frames[1], {
+      frameId: "frame-000002",
+      disposition: "duplicate",
+      duplicateReason: "notation-identity"
+    });
   });
 
   it("removes a wide colored keyboard below the score", async (t) => {
@@ -207,12 +326,17 @@ describe("score video processor", () => {
     const frame = join(directory, "frame.png");
     const output = join(directory, "result.pdf");
     const controller = new AbortController();
+    let observedOutputPath: string | undefined;
     await writeScoreFrame(frame, 150);
 
     // When: PDF generation reaches the completed write boundary.
     const result = createScorePdfFromFrames([frame], directory, output, {
       ...pdfOptions(),
       signal: controller.signal,
+      async outputArtifactSink() {
+        observedOutputPath = output;
+        assert.equal((await readFile(output)).subarray(0, 5).toString("ascii"), "%PDF-");
+      },
       onProgress(progress: number) {
         if (progress === 98) controller.abort();
       }
@@ -220,11 +344,22 @@ describe("score video processor", () => {
 
     // Then: the caller receives AbortError even though the owned output has been written.
     await assert.rejects(result, { name: "AbortError" });
+    assert.equal(observedOutputPath, output);
     assert.equal((await readFile(output)).subarray(0, 5).toString("ascii"), "%PDF-");
   });
 });
 
 function pdfOptions() { return { metadata: { videoId: "test-video", createdAt: new Date("2026-07-24T00:00:00.000Z") } }; }
+
+function fixedNowMs(): () => number {
+  const ticks = [100, 110, 120, 130, 140, 150, 140, 170];
+  let index = 0;
+  return () => {
+    const tick = ticks[index];
+    index += 1;
+    return tick ?? 170;
+  };
+}
 
 async function createTempDirectory(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
@@ -245,6 +380,10 @@ async function writeScoreFrame(path: string, markerX: number, paper = "white"): 
     <line x1="${markerX + 90}" y1="238" x2="${markerX + 90}" y2="190" stroke="black" stroke-width="5"/>
   </svg>`);
   await sharp(svg).png().toFile(path);
+}
+
+async function writeBlankFrame(path: string): Promise<void> {
+  await sharp({ create: { width: 960, height: 360, channels: 3, background: "white" } }).png().toFile(path);
 }
 
 async function writeScoreFrameWithPhoto(path: string): Promise<void> {

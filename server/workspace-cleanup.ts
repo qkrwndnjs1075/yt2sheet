@@ -5,8 +5,15 @@ import type { ScoreJobService } from "./score-job-service";
 const OWNED_WORK_DIRECTORY = /^worker-(\d+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LEGACY_WORK_DIRECTORY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OWNED_RESULT_FILE = /^yt2sheet-result-p([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pdf$/i;
+const OWNED_QUALITY_SIDECAR_TEMPORARY_FILE = /^yt2sheet-result-p([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pdf\.quality\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i;
 const LEGACY_RESULT_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pdf$/i;
 const LEGACY_RESULT_MAX_AGE_MS = 60 * 60 * 1_000;
+
+type OwnedArtifact = {
+  readonly path: string;
+  readonly device: bigint;
+  readonly inode: bigint;
+};
 
 type CloseableServer = {
   close(callback: (error?: Error) => void): void;
@@ -61,7 +68,8 @@ export async function cleanupOwnedWorkDirectories(dataRoot: string): Promise<voi
 export async function cleanupOwnedResultFiles(dataRoot: string, now: () => number = Date.now): Promise<void> {
   const resultsRoot = await ensureSafeResultsRoot(dataRoot);
   for (const entry of await readdir(resultsRoot, { withFileTypes: true })) {
-    const ownerPid = parseResultOwnerPid(entry.name);
+    const temporarySidecarOwnerPid = parseTemporarySidecarOwnerPid(entry.name);
+    const ownerPid = parseResultOwnerPid(entry.name) ?? temporarySidecarOwnerPid;
     const isLegacy = ownerPid === null && LEGACY_RESULT_FILE.test(entry.name);
     if (ownerPid === null && !isLegacy) {
       continue;
@@ -71,7 +79,7 @@ export async function cleanupOwnedResultFiles(dataRoot: string, now: () => numbe
     }
 
     const candidate = resolve(resultsRoot, entry.name);
-    const stats = await lstat(candidate);
+    const stats = await lstat(candidate, { bigint: true });
     if (stats.isSymbolicLink() || !stats.isFile()) {
       continue;
     }
@@ -79,10 +87,13 @@ export async function cleanupOwnedResultFiles(dataRoot: string, now: () => numbe
     if (dirname(resolvedCandidate) !== resultsRoot) {
       continue;
     }
-    if (isLegacy && now() - stats.mtimeMs <= LEGACY_RESULT_MAX_AGE_MS) {
+    if (isLegacy && now() - Number(stats.mtimeMs) <= LEGACY_RESULT_MAX_AGE_MS) {
       continue;
     }
-    await unlink(candidate);
+    const removed = await unlinkMatchingArtifact({ path: candidate, device: stats.dev, inode: stats.ino });
+    if (removed && temporarySidecarOwnerPid === null) {
+      await unlinkPairedQualitySidecar(candidate, resultsRoot);
+    }
   }
 }
 
@@ -135,6 +146,50 @@ function parseResultOwnerPid(fileName: string): number | null {
   }
   const ownerPid = Number(match[1]);
   return Number.isSafeInteger(ownerPid) && ownerPid > 0 ? ownerPid : null;
+}
+
+function parseTemporarySidecarOwnerPid(fileName: string): number | null {
+  const match = OWNED_QUALITY_SIDECAR_TEMPORARY_FILE.exec(fileName);
+  if (!match) {
+    return null;
+  }
+  const ownerPid = Number(match[1]);
+  return Number.isSafeInteger(ownerPid) && ownerPid > 0 ? ownerPid : null;
+}
+
+async function unlinkPairedQualitySidecar(candidate: string, resultsRoot: string): Promise<void> {
+  const sidecar = `${candidate}.quality.json`;
+  let stats;
+  try {
+    stats = await lstat(sidecar, { bigint: true });
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return;
+    }
+    throw error;
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    return;
+  }
+  const resolvedSidecar = await realpath(sidecar);
+  if (dirname(resolvedSidecar) === resultsRoot) {
+    await unlinkMatchingArtifact({ path: sidecar, device: stats.dev, inode: stats.ino });
+  }
+}
+
+async function unlinkMatchingArtifact(artifact: OwnedArtifact): Promise<boolean> {
+  try {
+    const stats = await lstat(artifact.path, { bigint: true });
+    if (stats.isSymbolicLink() || !stats.isFile()
+      || stats.dev !== artifact.device || stats.ino !== artifact.inode) {
+      return false;
+    }
+    await unlink(artifact.path);
+    return true;
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
 }
 
 function isProcessAlive(pid: number): boolean {

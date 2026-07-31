@@ -39,6 +39,12 @@ type BenchmarkCase = Readonly<{
   treatment: Readonly<{ candidateCount: number; stateRecall: number | null; boundaryRecall: number | null; runtimeMs: 0 }>;
   candidateDelta: number; withinBudget: boolean;
 }>;
+type BenchmarkEvidence = Readonly<{
+  schemaVersion: "score-benchmark-evidence/1"; runDigest: string; assetId: string; sourceGroupId: string;
+  split: "smoke" | "calibration" | "test"; classTags: readonly string[]; variant: "control" | "treatment";
+  sampling: Readonly<{ budget: number; timestampsMs: readonly number[]; candidateCount: number }>;
+  pipelineExecution: "not-run";
+}>;
 type RunInput = Readonly<{ manifestPath: string; planPath: string; corpusRoot: string; outputRoot: string; seed?: number }>;
 export type RunResult = Readonly<{ runDigest: string; outputDirectory: string; exitCode: 0 | 4 }>;
 export class BenchmarkRunError extends Error {
@@ -70,6 +76,8 @@ export async function runScoreBenchmark(input: RunInput): Promise<RunResult> {
     const provisional = corpus.assets.map((asset) => buildCase(asset, runDigest));
     const cases = provisional.sort((left, right) => compareText(left.row.assetId, right.row.assetId)
       || left.earliestTimestamp - right.earliestTimestamp || compareText(left.row.sourceGroupId, right.row.sourceGroupId)).map(({ row }) => row);
+    const evidence = provisional.flatMap((entry) => entry.evidence).sort((left, right) =>
+      compareText(left.assetId, right.assetId) || compareText(left.variant, right.variant));
     const claimTier = corpus.assets.some(({ asset }) => asset.source.kind === "external-local" && asset.split === "test")
       ? "external-gated" as const : "mechanics-only" as const;
     const groups: readonly BenchmarkGroupEligibility[] = corpus.assets.map(({ asset }) => ({ sourceGroupId: asset.sourceGroupId,
@@ -104,6 +112,7 @@ export async function runScoreBenchmark(input: RunInput): Promise<RunResult> {
       writeFile(resolve(outputDirectory, "run.json"), canonicalJson(run)),
       writeFile(resolve(outputDirectory, "rights-audit.json"), canonicalJson(rightsAudit)),
       writeFile(resolve(outputDirectory, "cases.jsonl"), jsonLines(cases)),
+      writeFile(resolve(outputDirectory, "evidence.jsonl"), jsonLines(evidence)),
       writeFile(resolve(outputDirectory, "summary.json"), canonicalJson(summary)),
       writeFile(resolve(outputDirectory, "failures.jsonl"), jsonLines(failures)),
       writeFile(resolve(outputDirectory, "run-volatile.json"), canonicalJson({ schemaVersion: "score-benchmark-run-volatile/1",
@@ -128,7 +137,9 @@ async function readPlan(planPath: string) {
   }
 }
 
-function buildCase(entry: LoadedCorpusAsset, runDigest: string): { readonly row: BenchmarkCase; readonly earliestTimestamp: number } {
+function buildCase(entry: LoadedCorpusAsset, runDigest: string): {
+  readonly row: BenchmarkCase; readonly earliestTimestamp: number; readonly evidence: readonly BenchmarkEvidence[];
+} {
   const { asset, labels, eventTrace } = entry;
   const controlPlan = buildControlSamplingPlan(asset.source.durationMs);
   const treatmentTimestamps = buildTreatmentTimestamps(asset.source.durationMs, eventTrace);
@@ -136,13 +147,30 @@ function buildCase(entry: LoadedCorpusAsset, runDigest: string): { readonly row:
   const treatmentState = computeUniqueStateRecall(treatmentTimestamps, labels.states).ratio;
   const controlBoundary = computeBoundaryRecall(controlPlan.timestampsMs, labels.boundaries).ratio;
   const treatmentBoundary = computeBoundaryRecall(treatmentTimestamps, labels.boundaries).ratio;
-  return { earliestTimestamp: Math.min(controlPlan.timestampsMs[0] ?? 0, treatmentTimestamps[0] ?? 0), row: {
-    schemaVersion: "score-benchmark-case/1", runDigest, assetId: asset.assetId, sourceGroupId: asset.sourceGroupId,
-    split: asset.split, classTags: asset.classTags, budget: controlPlan.budget,
-    control: { candidateCount: controlPlan.timestampsMs.length, stateRecall: controlState, boundaryRecall: controlBoundary, runtimeMs: 0 },
-    treatment: { candidateCount: treatmentTimestamps.length, stateRecall: treatmentState, boundaryRecall: treatmentBoundary, runtimeMs: 0 },
-    candidateDelta: treatmentTimestamps.length - controlPlan.timestampsMs.length, withinBudget: treatmentTimestamps.length <= controlPlan.budget,
-  } };
+  return {
+    earliestTimestamp: Math.min(controlPlan.timestampsMs[0] ?? 0, treatmentTimestamps[0] ?? 0),
+    row: {
+      schemaVersion: "score-benchmark-case/1", runDigest, assetId: asset.assetId, sourceGroupId: asset.sourceGroupId,
+      split: asset.split, classTags: asset.classTags, budget: controlPlan.budget,
+      control: { candidateCount: controlPlan.timestampsMs.length, stateRecall: controlState, boundaryRecall: controlBoundary, runtimeMs: 0 },
+      treatment: { candidateCount: treatmentTimestamps.length, stateRecall: treatmentState, boundaryRecall: treatmentBoundary, runtimeMs: 0 },
+      candidateDelta: treatmentTimestamps.length - controlPlan.timestampsMs.length, withinBudget: treatmentTimestamps.length <= controlPlan.budget,
+    },
+    evidence: [
+      {
+        schemaVersion: "score-benchmark-evidence/1", runDigest, assetId: asset.assetId, sourceGroupId: asset.sourceGroupId,
+        split: asset.split, classTags: asset.classTags, variant: "control",
+        sampling: { budget: controlPlan.budget, timestampsMs: controlPlan.timestampsMs, candidateCount: controlPlan.timestampsMs.length },
+        pipelineExecution: "not-run",
+      },
+      {
+        schemaVersion: "score-benchmark-evidence/1", runDigest, assetId: asset.assetId, sourceGroupId: asset.sourceGroupId,
+        split: asset.split, classTags: asset.classTags, variant: "treatment",
+        sampling: { budget: controlPlan.budget, timestampsMs: treatmentTimestamps, candidateCount: treatmentTimestamps.length },
+        pipelineExecution: "not-run",
+      },
+    ],
+  };
 }
 
 function buildBootstrap(cases: readonly BenchmarkCase[], seed: number) {
