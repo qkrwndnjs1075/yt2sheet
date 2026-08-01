@@ -102,3 +102,7 @@
 
 - Do not expose a cache-busting release version in the user-facing raw installer URL when the product contract is "install latest." Keep the pasted command stable, resolve `releases/latest/download` inside the bootstrap, and preserve an explicit release-tag override only for diagnostics and reproducible installs.
 - When explaining a PowerShell pipeline, visually verify the complete copied command. `irm <url>` only returns the payload; execution requires the trailing `| iex`.
+
+# 2026-08-01 - Do not trust one Windows architecture API
+
+- A local PowerShell 5.1 success does not prove `RuntimeInformation.OSArchitecture` is populated in every Windows host. For bootstrap compatibility, prefer the native WOW64/process architecture environment values, keep the runtime API as a fallback, and regression-test the exact empty-runtime case before releasing.

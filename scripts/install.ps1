@@ -31,8 +31,15 @@ if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
   }
 }
 
-$architecture = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+$architecture = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITEW6432", "Process")
+if ([string]::IsNullOrWhiteSpace($architecture)) {
+  $architecture = [Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE", "Process")
+}
+if ([string]::IsNullOrWhiteSpace($architecture)) {
+  $architecture = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+}
 $target = switch ($architecture) {
+  "AMD64" { "windows-x64"; break }
   "X64" { "windows-x64"; break }
   default { throw "Windows $architecture 빌드는 아직 제공되지 않습니다. 현재는 Windows x64를 지원합니다." }
 }

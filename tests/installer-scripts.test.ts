@@ -40,6 +40,34 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(readme, /wrap the entire URL in double quotes/);
 });
 
+test("raw PowerShell installer uses the native environment when runtime architecture is empty", { skip: process.platform !== "win32" }, async () => {
+  const powershell = await readFile("scripts/install.ps1", "utf8");
+  const forcedEmptyRuntime = powershell.replace(
+    "[string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture",
+    '""'
+  );
+  assert.notEqual(forcedEmptyRuntime, powershell, "the regression harness must force the reported empty runtime architecture");
+
+  const command = "$env:YT2SHEET_TEST_INSTALLER_PAYLOAD | Invoke-Expression";
+  const encodedCommand = Buffer.from(command, "utf16le").toString("base64");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-EncodedCommand", encodedCommand], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PROCESSOR_ARCHITECTURE: "x86",
+      PROCESSOR_ARCHITEW6432: "AMD64",
+      YT2SHEET_RELEASE_BASE_URL: "http://127.0.0.1:1",
+      YT2SHEET_INSTALL_ROOT: "unused-by-connection-failure",
+      YT2SHEET_TEST_INSTALLER_PAYLOAD: forcedEmptyRuntime
+    },
+    timeout: 10_000
+  });
+
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0, "the isolated download should stop at the deliberately closed endpoint");
+  assert.match(result.stdout, /### \[1\/7\].*\(14%\)/, "AMD64 from the native environment must select the Windows x64 asset");
+});
+
 test("raw PowerShell installer reports progress inside an outer script block", { skip: process.platform !== "win32" }, async () => {
   const powershell = await readFile("scripts/install.ps1", "utf8");
   const command = [
