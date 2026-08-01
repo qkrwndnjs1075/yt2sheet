@@ -1647,3 +1647,22 @@
 - Added a Windows spawned-process regression that evaluates the UTF-8 installer through `Invoke-Expression` inside an outer script block. Focused coverage passed 2/2; final `npm run verify` passed 314 tests with one Windows symlink-permission skip, then built the CLI, standalone web app, and extension.
 - Pushed `4813ee1` (`fix(installer): preserve progress state under iex`) and `23793b6` (`chore(release): bump cli to 0.2.4`) to `main`. Annotated tag `cli-v0.2.4` targets `23793b6`; release workflow `30680106055` passed all four platform builds and published the GitHub Release.
 - All four archive digests match the public `checksums.txt`. The literal public `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex` flow completed stages 1/7 through 7/7, installed `yt2sheet 0.2.4 windows-x64`, returned `yt2 help`, then `yt2 uninstall` removed the isolated root and restored the user PATH.
+
+# G072 Diagnose persistent user-session PowerShell null failure (2026-08-01)
+
+## Plan
+
+- [x] Compare the current public payload with the reported failure and document the missing exact user-session error record.
+- [x] Reproduce the reported `InvokeMethodOnNull` signature with the stale pre-guard installer body and add a RED diagnostic regression.
+- [x] Isolate raw installer execution, remove nullable pre-progress instance calls, expose the inner failure line, and add a versioned cache key.
+- [x] Run focused and full verification before publishing the patch release.
+- [x] Publish `cli-v0.2.5`, verify its assets and checksums, then prove the versioned public install/help/uninstall flow.
+
+## Review
+
+- The exact `$Error[0]` record from the user's already-open terminal was not available, so the precise null receiver in that session is not claimed. The same `InvokeMethodOnNull` signature is reproducible with the stale pre-guard installer body when `New-Object` yields null; that body's unguarded `Dispose()` masked the earlier download-client failure.
+- The fresh public `cli-v0.2.4` payload does not reproduce the null failure. GitHub raw responses are cacheable, so the documented command now uses a `?v=0.2.5` cache key instead of relying on the unchanged raw URL.
+- The installer body now runs in its own parameterized script block and its top-level catch prints the inner PowerShell position and stack before rethrowing. The architecture, base-URL trim, and temporary-name setup no longer use nullable instance-method calls before progress begins.
+- Failing-first coverage previously saw only the outer `Invoke-Expression` position; it now identifies `$client.DownloadFile(...)` and `Download-InstallFile` when the deliberate closed-endpoint failure occurs. Focused installer tests passed 2/2, and `npm run verify` exited 0 with 314 passing tests, one Windows symlink-permission skip, plus successful CLI, standalone web, and extension builds.
+- Pushed `ad692d6` (`fix(installer): harden raw PowerShell bootstrap`) to `main` and tagged `cli-v0.2.5`. Release workflow `30681842359` completed all four platform builds and published the GitHub Release; every archive digest matches the public `checksums.txt`.
+- A profile-loaded Windows PowerShell process ran `irm 'https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1?v=0.2.5' | iex` through stages 1/7 to 7/7, installed `yt2sheet 0.2.5 windows-x64`, returned the expected `yt2 help`, and removed the isolated install root through `yt2 uninstall` while restoring the user PATH.
