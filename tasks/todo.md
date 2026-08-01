@@ -1,3 +1,20 @@
+# CLI time-range extraction (2026-08-01)
+
+## Plan
+
+- [x] Add `--start`/`--end` seconds parsing and boundary validation to the standalone CLI.
+- [x] Extend the shared processor input and duration-aware range resolver.
+- [x] Forward the range through `runCliJob` without changing no-range behavior or cleanup.
+- [x] Trim FFmpeg frame extraction to the validated half-open interval while keeping full download/retry behavior.
+- [x] Update CLI help/README and run focused tests, typecheck, CLI build, and compiled-entrypoint smoke checks.
+
+## Review
+
+- Plan artifact: `.omo/plans/time-range-cli.md`.
+- User-approved scope: CLI only; web/UI/browser/visual QA and release actions are excluded.
+- Implementation complete. All five tasks passed independent review: CLI parsing preserves legacy shapes and proxy-proves attached-empty flags do not consume the following URL; the resolver rejects invalid source durations before resolution while preserving five reason codes; job propagation preserves no-range cleanup/input behavior; FFmpeg preserves full downloads while actual automated media testing proves only the requested half-open interval is extracted; help and README accurately document all range boundaries. UI/visual QA remains user-owned.
+- Final gates passed: `npm run typecheck`, test build, 340 passing tests (one Windows symlink fixture skipped), CLI build, compiled help/invalid-range smoke, structural plan audit, scope allowlist, and diff check. Browser, screenshot, PDF-rendering, and visual QA were not run by request.
+
 # ROI Score Export Pipeline
 
 # G070 Immediate Windows uninstall and PowerShell bootstrap repair (2026-07-31)
@@ -1716,3 +1733,20 @@
 - Generated-bundle QA selected `yt2.ps1`, preserved an ampersand URL without `list`/`start_radio` shell errors, and removed the local bundle through `yt2 uninstall`.
 - Pushed `8d3681c` (`fix(cli): preserve Windows URLs and default output directory`) and tagged `cli-v0.2.8`. Release workflow `30683702870` succeeded; all four public archives matched `checksums.txt`.
 - A profile-loaded PowerShell process ran the literal unversioned installer command, installed `yt2sheet 0.2.8 windows-x64`, processed the exact user URL to a 4-page PDF at `...\yt2sheet\yt2sheet-7-l2e72RSmc.pdf`, and passed `yt2 uninstall` cleanup.
+
+# G076 CLI score time-range extraction release (2026-08-01)
+
+## Plan
+
+- [x] Bump the CLI package metadata from `0.2.8` to `0.2.9` and commit the time-range feature with its tests and documentation.
+- [x] Push `main` and create/push the annotated `cli-v0.2.9` tag.
+- [x] Verify the four-platform release workflow and GitHub Release assets.
+- [x] Verify the published `checksums.txt` entries against the release asset digests.
+
+## Review
+
+- Commit `932ddb1` (`feat(cli): extract selected score time range`) contains the nested CLI range contract, resolver, propagation, FFmpeg trimming, integration coverage, help/README updates, and package version `0.2.9`.
+- `npm run typecheck`, `npm test` (340 passed, 0 failed, 1 existing Windows symlink-permission skip), and `npm run build:cli` passed before push.
+- `main` was pushed to `origin/main`; annotated tag `cli-v0.2.9` was pushed and its peeled ref resolves to `932ddb1122dc0e56ede1a8a6d63a3ed237d56661`.
+- Release workflow `30688423109` completed all four platform builds and the GitHub Release job successfully. Release `yt2sheet cli-v0.2.9` is published with Windows x64 ZIP, macOS Intel/ARM64 tarballs, Linux x64 tarball, and `checksums.txt`.
+- The published checksum file matches all four asset digests: Windows `f1ae42f3891ca5c5fcdacb2001d3708d96571713620adb11ff44a94b8eea3bb3`, macOS Intel `7c8be9099d025103e16a8a621495d2ea5be56d6b9cc9553eb01b84f5c57b5245`, macOS ARM64 `843731d727da8c13d072e541b749c0cf37174c543511a04af0bfa915c8be8ea6`, Linux `e047da37c95c3cab888fae30a370f1544726ee2d4dd9f00c8b55a6b8c424114e`.
