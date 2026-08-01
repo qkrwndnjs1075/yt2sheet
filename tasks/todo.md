@@ -19,9 +19,16 @@
 
 ## Release / installation
 
-- [ ] Bump the CLI patch version, commit the crop-analysis fix and regression, and push `main`.
-- [ ] Push annotated tag `cli-v0.2.11` and verify the four-platform release workflow and checksums.
-- [ ] Reinstall the published Windows bundle and verify the installed version and CLI help.
+- [x] Bump the CLI patch version, commit the crop-analysis fix and regression, and push `main`.
+- [x] Push annotated tag `cli-v0.2.11` and verify the four-platform release workflow and checksums.
+- [x] Reinstall the published Windows bundle and verify the installed version and CLI help.
+
+## Release review
+
+- Commit `8b887b4` (`fix(cli): stabilize score crop against playback overlays`) contains the crop-analysis fix, production-shaped regressions, and CLI version `0.2.11`.
+- `main` and annotated tag `cli-v0.2.11` are pushed; the peeled tag resolves to `8b887b49fb47cbee4b4dd938ad57fb989a48a16d`.
+- Release workflow `30692391885` completed successfully for Windows x64, macOS Intel, macOS ARM64, and Linux x64, then published the GitHub Release and checksums.
+- The published Windows bundle was installed with the explicit `cli-v0.2.11` tag. `VERSION` reports `yt2sheet 0.2.11 windows-x64`, and the installed `yt2 help` command exited successfully.
 
 # CLI v0.2.10 tracker-line release (2026-08-01)
 
