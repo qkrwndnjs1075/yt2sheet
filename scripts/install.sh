@@ -1,6 +1,6 @@
 set -eu
 
-release_tag="${YT2SHEET_RELEASE_TAG:-cli-v0.2.3}"
+release_tag="${YT2SHEET_RELEASE_TAG:-cli-v0.2.4}"
 repository="${YT2SHEET_REPOSITORY:-qkrwndnjs1075/yt2sheet}"
 base_url="${YT2SHEET_RELEASE_BASE_URL:-https://github.com/$repository/releases/download/$release_tag}"
 base_url="${base_url%/}"

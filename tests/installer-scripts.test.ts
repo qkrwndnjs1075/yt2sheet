@@ -12,8 +12,8 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   ]);
 
   assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
-  assert.match(powershell, /"cli-v0\.2\.3"/, "the raw installer must default to the latest published CLI release");
-  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.3/, "the Unix installer must default to the same latest CLI release");
+  assert.match(powershell, /"cli-v0\.2\.4"/, "the raw installer must default to the latest published CLI release");
+  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.4/, "the Unix installer must default to the same latest CLI release");
   assert.match(powershell, /\(\?:release-assets\/\)\?/, "the PowerShell installer must accept GitHub Release checksum paths");
   assert.match(shell, /\$2 == "release-assets\/" name/, "the Unix installer must accept GitHub Release checksum paths");
   assert.match(powershell, /### \[\{0\}\/\{1\}\]/);
