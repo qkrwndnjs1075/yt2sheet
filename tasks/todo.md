@@ -1,3 +1,36 @@
+# CLI v0.2.10 tracker-line release (2026-08-01)
+
+## Plan
+
+- [x] Review the tag-triggered release workflow and bump the CLI patch version.
+- [x] Commit the tracker-line deduplication fix, regressions, task record, and release version as one atomic release change.
+- [x] Push `main`, create and push annotated tag `cli-v0.2.10`, then verify the published GitHub Release workflow and assets.
+
+## Review
+
+- Commit `e072a09` (`fix(cli): deduplicate moving score tracker lines`) includes the identity-mask fix, both opaque-tracker regressions, and package version `0.2.10`.
+- `npm run verify` passed: typecheck, 342 passed tests, 0 failed tests, 1 existing Windows symlink-permission skip, CLI build, standalone web build, and extension build.
+- `main` and annotated tag `cli-v0.2.10` are pushed; the tag peels to `e072a09b728ee90ce87bc2d6a2064afe8dc94245`.
+- Release workflow `30689977209` completed successfully across Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and GitHub Release publication. Release `yt2sheet cli-v0.2.10` is public with four platform archives and `checksums.txt`.
+- Published archive digests match the checksum asset: macOS ARM64 `d5e5d4bf2d45cd8de16e8ef2f4e828c0ebf41bfec08d37a481e44da5def744e3`, macOS Intel `6e92d058823d20825925adda8e748b33ca9cc8add40fa33561f9d2242e868839`, Linux `11b3de75f0564fb583ea298528faab618b6a45ae376d70c7f2e54061fc5853db`, Windows `605c2589748419382da214537e3cb215531496221d62163c965d161e3a0639ac`.
+- Visual QA, PDF rendering, and live YouTube CLI processing were not run by request.
+
+# CLI tracker-line duplicate-score repair (2026-08-01)
+
+## Plan
+
+- [x] Add a failing standalone processor regression for identical notation with a moved opaque thin tracking line.
+- [x] Remove only tracker-shaped interior ink before score identity hashes are generated, preserving musical stems and barlines.
+- [x] Run the focused score-processor regression, typecheck, and nonvisual CLI/media validation; do not run visual QA or PDF rendering.
+- [x] Remove debug artifacts and document the observed root cause and verification evidence.
+
+## Review
+
+- Root cause: a narrow opaque tracker line remained in the standalone normalized image and changed dHash, dominant ink hash, and notation identity when it moved, so the same sheet was accepted twice.
+- Fix: notation identity now excludes only contiguous dark columns no wider than 2% of the crop that cover at least 80% of its height. This leaves ordinary stems and barlines in the identity signal.
+- Regression evidence: the new opaque 4px tracker test was RED before the fix (`scoreCount=2`) and GREEN after it (`scoreCount=1`, notation-identity duplicate). A paired guard proves changed notation with moved trackers remains two scores.
+- Verification: focused 14-test score-processor suite passed; `npm run typecheck`, `npm run build:cli`, and final `npm test` passed with 342 passed, 0 failed, and 1 existing Windows symlink-permission skip. `git diff --check` passed. Visual QA, PDF rendering, and live YouTube CLI processing were not run by request.
+
 # CLI time-range extraction (2026-08-01)
 
 ## Plan
