@@ -1614,3 +1614,36 @@
 - Root cause two: the release workflow writes `release-assets/<archive>` in `checksums.txt`, while both installers previously accepted only the archive basename.
 - `e6f7937` makes the raw PowerShell entrypoint BOM-free and advances both installer defaults to `cli-v0.2.1`; `144f6cb` accepts the release checksum path on Windows and Unix.
 - `npm run verify` passed with 313 tests and one Windows symlink-permission skip. The exact public `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex` command completed all seven stages in a temporary root, installed `yt2sheet 0.2.1 windows-x64`, and returned the expected `yt2 help` heading. The temporary root was moved to the Windows Recycle Bin and the user PATH was restored.
+
+# G068 Recheck public PowerShell installer scope (2026-08-01)
+
+## Plan
+
+- [x] Compare the local installer with the public raw payload and record the exact PowerShell/runtime context.
+- [x] Execute the literal `irm ... | iex` command in isolated fresh PowerShell processes with and without the user profile.
+- [x] Reproduce the related outer-script-block scope and distinguish it from the literal interactive command.
+- [x] Restore PATH and temporary roots, update the correction-prevention lesson, and document residual user-terminal evidence needed.
+
+## Review
+
+- The public and local `scripts/install.ps1` payloads are both 6000 bytes with SHA-256 `5adccb23b35e685a352726a053a254dc664f2d14f47f92469aa335709687fa54`; the public payload is BOM-free and contains the current WebClient null guard.
+- The literal command completed all seven stages with exit code 0 in a profile-loaded PowerShell and in the isolated direct path. No exact null-valued-method failure was reproduced in the shared account environment.
+- Wrapping the same pipeline in `& { ... }` reproduced a separate `Attempted to divide by zero` failure at `Write-InstallStep`, caused by the function's `$script:` progress variables not being available in that evaluation scope. This is a residual hardening issue, not proof that the user's literal prompt command is currently failing.
+- All four profile files for the shared account were absent, so a function/alias override in the user's already-open terminal remains the unresolved difference. No installer source or release was changed in this review; only this review record and the correction lesson were updated.
+
+# G071 Publish PowerShell scope hardening (2026-08-01)
+
+## Plan
+
+- [x] Replace the PowerShell installer progress counter's script-scope dependency with scope-safe state.
+- [x] Add a regression contract for direct and outer-script-block `irm | iex` evaluation.
+- [x] Run focused tests, full applicable verification, and real Windows installer/uninstall smoke coverage.
+- [x] Bump the CLI patch version, commit and push the complete requested change set, tag the release, and verify published assets/checksums.
+
+## Review
+
+- Confirmed and closed the deployment gap: public `main` previously served `$script:currentStep/$script:totalSteps`; it now serves the scope-safe explicit `$progressState` implementation.
+- Red/green proof: the committed/public implementation fails inside an outer PowerShell script block with `Attempted to divide by zero`; the worktree implementation emits `### [1/7] ... (14%)` and reaches the deliberately closed download endpoint.
+- Added a Windows spawned-process regression that evaluates the UTF-8 installer through `Invoke-Expression` inside an outer script block. Focused coverage passed 2/2; final `npm run verify` passed 314 tests with one Windows symlink-permission skip, then built the CLI, standalone web app, and extension.
+- Pushed `4813ee1` (`fix(installer): preserve progress state under iex`) and `23793b6` (`chore(release): bump cli to 0.2.4`) to `main`. Annotated tag `cli-v0.2.4` targets `23793b6`; release workflow `30680106055` passed all four platform builds and published the GitHub Release.
+- All four archive digests match the public `checksums.txt`. The literal public `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex` flow completed stages 1/7 through 7/7, installed `yt2sheet 0.2.4 windows-x64`, returned `yt2 help`, then `yt2 uninstall` removed the isolated root and restored the user PATH.
