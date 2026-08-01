@@ -40,14 +40,19 @@ if ([string]::IsNullOrWhiteSpace($baseUrl)) {
   throw "Release download URL is empty. Set YT2SHEET_RELEASE_BASE_URL or provide a repository and release tag."
 }
 $baseUrl = $baseUrl.TrimEnd("/")
-$totalSteps = 7
-$currentStep = 0
+$progressState = [pscustomobject]@{
+  CurrentStep = 0
+  TotalSteps = 7
+}
 function Write-InstallStep {
-  param([string]$Message)
+  param(
+    [string]$Message,
+    [psobject]$ProgressState
+  )
 
-  $script:currentStep += 1
-  $percent = [Math]::Round(($script:currentStep / $script:totalSteps) * 100)
-  Write-Output ("### [{0}/{1}] {2} ({3}%)" -f $script:currentStep, $script:totalSteps, $Message, $percent)
+  $ProgressState.CurrentStep += 1
+  $percent = [Math]::Round(($ProgressState.CurrentStep / $ProgressState.TotalSteps) * 100)
+  Write-Output ("### [{0}/{1}] {2} ({3}%)" -f $ProgressState.CurrentStep, $ProgressState.TotalSteps, $Message, $percent)
 }
 function Download-InstallFile {
   param(
@@ -76,12 +81,12 @@ $stagingRoot = Join-Path $temporaryRoot "staged"
 
 try {
   New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
-  Write-InstallStep "yt2 번들 다운로드 중"
+  Write-InstallStep -Message "yt2 번들 다운로드 중" -ProgressState $progressState
   Download-InstallFile -Uri "$baseUrl/$assetName" -Destination $archivePath
-  Write-InstallStep "무결성 파일 다운로드 중"
+  Write-InstallStep -Message "무결성 파일 다운로드 중" -ProgressState $progressState
   Download-InstallFile -Uri "$baseUrl/checksums.txt" -Destination $checksumsPath
 
-  Write-InstallStep "SHA-256 검증 중"
+  Write-InstallStep -Message "SHA-256 검증 중" -ProgressState $progressState
   $checksumLine = Get-Content -LiteralPath $checksumsPath | Where-Object {
     $_ -match "^\s*[0-9a-fA-F]{64}\s+\*?(?:release-assets/)?$([regex]::Escape($assetName))\s*$"
   } | Select-Object -First 1
@@ -95,9 +100,9 @@ try {
     throw "다운로드한 파일의 SHA-256 검증에 실패했습니다."
   }
 
-  Write-InstallStep "압축 해제 중"
+  Write-InstallStep -Message "압축 해제 중" -ProgressState $progressState
   Expand-Archive -LiteralPath $archivePath -DestinationPath $stagingRoot -Force
-  Write-InstallStep "파일 설치 중"
+  Write-InstallStep -Message "파일 설치 중" -ProgressState $progressState
   if (Test-Path -LiteralPath $InstallRoot) {
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force
   }
@@ -113,7 +118,7 @@ try {
     }
   }
 
-  Write-InstallStep "사용자 PATH 등록 중"
+  Write-InstallStep -Message "사용자 PATH 등록 중" -ProgressState $progressState
   $binPath = Join-Path $InstallRoot "bin"
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   $pathEntries = if ([string]::IsNullOrWhiteSpace($userPath)) { @() } else { $userPath -split ";" | Where-Object { $_ } }
@@ -124,7 +129,7 @@ try {
   }
 
   $env:Path = "$binPath;$env:Path"
-  Write-InstallStep "설치 파일 확인 중"
+  Write-InstallStep -Message "설치 파일 확인 중" -ProgressState $progressState
   $launcherPath = Join-Path $binPath "yt2.cmd"
   if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
     throw "설치된 yt2 실행 파일을 찾지 못했습니다: $launcherPath"

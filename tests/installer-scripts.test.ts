@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -16,6 +17,10 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(powershell, /\(\?:release-assets\/\)\?/, "the PowerShell installer must accept GitHub Release checksum paths");
   assert.match(shell, /\$2 == "release-assets\/" name/, "the Unix installer must accept GitHub Release checksum paths");
   assert.match(powershell, /### \[\{0\}\/\{1\}\]/);
+  assert.match(powershell, /\$progressState = \[pscustomobject\]@\{/);
+  assert.match(powershell, /\[psobject\]\$ProgressState/);
+  assert.match(powershell, /-ProgressState \$progressState/);
+  assert.doesNotMatch(powershell, /\$script:(?:currentStep|totalSteps)/, "progress state must survive evaluation inside an outer PowerShell script block");
   assert.match(shell, /### \[%s\/%s\]/);
   assert.match(powershell, /SetEnvironmentVariable\("Path",/);
   assert.match(powershell, /yt2\.cmd/);
@@ -29,4 +34,28 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1 \| iex/);
   assert.match(readme, /yt2 "https:\/\/www\.youtube\.com\/watch\?v=VIDEO_ID"/);
   assert.match(readme, /wrap the entire URL in double quotes/);
+});
+
+test("raw PowerShell installer reports progress inside an outer script block", { skip: process.platform !== "win32" }, async () => {
+  const powershell = await readFile("scripts/install.ps1", "utf8");
+  const command = [
+    "$payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:YT2SHEET_TEST_INSTALLER_PAYLOAD))",
+    "& { $payload | Invoke-Expression }"
+  ].join("\n");
+  const encodedCommand = Buffer.from(command, "utf16le").toString("base64");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-EncodedCommand", encodedCommand], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      YT2SHEET_RELEASE_BASE_URL: "http://127.0.0.1:1",
+      YT2SHEET_INSTALL_ROOT: "unused-by-connection-failure",
+      YT2SHEET_TEST_INSTALLER_PAYLOAD: Buffer.from(powershell, "utf8").toString("base64")
+    },
+    timeout: 10_000
+  });
+
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0, "the isolated download should stop at the deliberately closed endpoint");
+  assert.match(result.stdout, /### \[1\/7\].*\(14%\)/);
+  assert.doesNotMatch(result.stderr, /divide by zero|null-valued expression/);
 });
