@@ -4,7 +4,7 @@ import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
 const ABSENT = "ABSENT";
-const excludedDirectories = new Set([".git", "build-test", "dist", "dist-web", "evidence"]);
+const excludedDirectories = new Set([".git", "build-test", "dist", "evidence"]);
 const root = parseRoot(process.argv.slice(2));
 const entries = fingerprintEntries(root);
 const manifest = {

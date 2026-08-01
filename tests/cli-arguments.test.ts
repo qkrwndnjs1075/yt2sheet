@@ -33,6 +33,7 @@ test("parses output and cookie options", () => {
       videoUrl: "https://youtu.be/1yCkz9VT3ZA",
       videoId: "1yCkz9VT3ZA",
       outputPath: resolve("C:/work", "exports/song.pdf"),
+      overwriteOutput: true,
       cookiesPath: resolve("C:/work", "private/cookies.txt")
     }
   });

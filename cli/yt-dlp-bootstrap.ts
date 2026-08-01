@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type IncomingMessage } from "node:http";
 import { get } from "node:https";
-import { ScorePipelineError } from "../server/score-job-service";
+import { ScorePipelineError } from "../pipeline/job-contract";
 
 export const YT_DLP_RELEASE_VERSION = "2026.07.04";
 

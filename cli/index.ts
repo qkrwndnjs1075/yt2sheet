@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { ScorePipelineError } from "../server/score-job-service";
+import { ScorePipelineError } from "../pipeline/job-contract";
 import { parseCliArguments } from "./arguments";
 import { describeCliError, runCliJob } from "./job";
 import { formatCliUninstallOutcome, uninstallStandaloneCli } from "./uninstall";
@@ -41,6 +41,7 @@ Time range:
 
 Output:
   Without --output, writes ./yt2sheet/yt2sheet-<videoId>.pdf in the current directory.
+  Existing default files are preserved as yt2sheet-<videoId>-2.pdf, -3.pdf, and so on.
   Videos are processed locally on your computer.
 
 Uninstall:

@@ -1,5 +1,13 @@
 # Lessons
 
+- A score artifact cleaner must classify a whole nearby text group before erasing top-right components. Per-glyph edge thresholds can keep `Frédéric Chop` while silently deleting the trailing `in`; compare the normalized export to the exact source frame at text boundaries, not just staff completeness.
+
+- Deduplication success is not score-quality success. When two captures share notation but one contains additional legitimate title, tempo, staff, or measure context, do not keep the earliest frame blindly; compare completeness inside the score region and retain the best representative before composing the PDF.
+
+- When a user says a regenerated PDF still repeats a score sheet, inspect the exact new artifact and retain the accepted-frame quality report. A title appearing between frames can change outer crop height and a crop-derived staff-gap heuristic even when the staff notation is identical; compare identity and geometry within the detected staff rows, not the full frame bounds.
+
+- When a user corrects a diagnosis with an exact CLI transcript, re-trace that exact command before relying on a similarly named web/backend path. For default output behavior, test two identical CLI invocations and verify both the reported paths and on-disk file identities; do not infer that UUID-backed internal artifacts prevent a deterministic user-facing destination from being overwritten.
+
 - Do not report development servers as still running based only on an earlier listener check. Before the final handoff, launch them in a detached persistent process and perform fresh HTTP checks after the launch; an attached tool session may terminate when the turn ends.
 - When a browser extension captures a whole tab but the user selects ROI over the HTML video element, always preserve the source video frame size and convert through `videoRect` plus viewport scale at crop time. Letterbox correction alone is not enough.
 - When a Chrome extension uses `tabCapture.getMediaStreamId()` before an interactive ROI step, verify the later offscreen `getUserMedia()` redemption path too. If first redemption can fail after UI delay, keep startup failure single-sourced, retry with a fresh stream id once, and format DOMException-like causes before logging.

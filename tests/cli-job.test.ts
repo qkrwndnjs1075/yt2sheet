@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import test from "node:test";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseCliArguments } from "../cli/arguments";
 import { runCliJob } from "../cli/job";
-import type { ScoreJobInput } from "../server/score-job-service";
+import type { ScoreJobInput } from "../pipeline/job-contract";
 
 test("runs a processor and copies only its PDF to the requested path", async () => {
   let dataRoot = "";
@@ -39,6 +40,58 @@ test("runs a processor and copies only its PDF to the requested path", async () 
   assert.equal(await readFile(result.outputPath, "utf8"), "%PDF-test");
   await access(result.outputPath);
   await assert.rejects(stat(dataRoot), { code: "ENOENT" });
+});
+
+test("preserves an existing default output by allocating a numbered PDF", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "yt2sheet-cli-output-"));
+  const outputPath = join(directory, "yt2sheet-1yCkz9VT3ZA.pdf");
+  t.after(async () => { await rm(directory, { recursive: true, force: true }); });
+  await writeFile(outputPath, "%PDF-first", "utf8");
+
+  const result = await runCliJob({
+    videoId: "1yCkz9VT3ZA",
+    videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+    outputPath,
+    tools: { ytDlp: process.execPath, ffmpeg: process.execPath, ffprobe: process.execPath },
+    toolValidator: async () => undefined,
+    processorFactory: ({ dataRoot }) => ({
+      async process(): Promise<{ readonly filePath: string; readonly pageCount: number }> {
+        const filePath = join(dataRoot, "result.pdf");
+        await writeFile(filePath, "%PDF-second", "utf8");
+        return { filePath, pageCount: 2 };
+      }
+    })
+  });
+
+  assert.equal(result.outputPath, join(directory, "yt2sheet-1yCkz9VT3ZA-2.pdf"));
+  assert.equal(await readFile(outputPath, "utf8"), "%PDF-first");
+  assert.equal(await readFile(result.outputPath, "utf8"), "%PDF-second");
+});
+
+test("replaces an explicit output path", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "yt2sheet-cli-explicit-output-"));
+  const outputPath = join(directory, "score.pdf");
+  t.after(async () => { await rm(directory, { recursive: true, force: true }); });
+  await writeFile(outputPath, "%PDF-first", "utf8");
+
+  const result = await runCliJob({
+    videoId: "1yCkz9VT3ZA",
+    videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+    outputPath,
+    overwriteOutput: true,
+    tools: { ytDlp: process.execPath, ffmpeg: process.execPath, ffprobe: process.execPath },
+    toolValidator: async () => undefined,
+    processorFactory: ({ dataRoot }) => ({
+      async process(): Promise<{ readonly filePath: string; readonly pageCount: number }> {
+        const filePath = join(dataRoot, "result.pdf");
+        await writeFile(filePath, "%PDF-second", "utf8");
+        return { filePath, pageCount: 2 };
+      }
+    })
+  });
+
+  assert.equal(result.outputPath, outputPath);
+  assert.equal(await readFile(outputPath, "utf8"), "%PDF-second");
 });
 
 test("forwards an optional time range to the processor input without adding an absent key", async () => {

@@ -1,5 +1,5 @@
-import { ScorePipelineError } from "../server/score-job-service";
-import { runProcess, type MediaTools } from "../server/media-tools";
+import { ScorePipelineError } from "../pipeline/job-contract";
+import { runProcess, type MediaTools } from "../pipeline/media-tools";
 import { ensureYtDlpExecutable, type YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
 export async function resolveCliMediaTools(

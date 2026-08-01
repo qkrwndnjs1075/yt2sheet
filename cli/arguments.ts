@@ -1,11 +1,12 @@
 import { resolve } from "node:path";
-import { parseYouTubeVideoId } from "../src/shared/youtube";
+import { parseYouTubeVideoId } from "./youtube";
 
 export type CliRunCommand = {
   readonly kind: "run";
   readonly videoUrl: string;
   readonly videoId: string;
   readonly outputPath: string;
+  readonly overwriteOutput?: true;
   readonly cookiesPath?: string;
   readonly timeRange?: {
     readonly startTimeSec?: number;
@@ -134,6 +135,7 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
       videoUrl,
       videoId,
       outputPath: outputPath ?? resolve(cwd, "yt2sheet", `yt2sheet-${videoId}.pdf`),
+      ...(outputPath === undefined ? {} : { overwriteOutput: true }),
       ...(cookiesPath ? { cookiesPath } : {}),
       ...(timeRange ? { timeRange } : {})
     }

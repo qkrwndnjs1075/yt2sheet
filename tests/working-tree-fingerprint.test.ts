@@ -33,8 +33,6 @@ test("creates a sorted, nonignored cached-and-untracked manifest deterministical
     await writeFile(join(root, ".omo", "evidence", "receipt.txt"), "evidence\n");
     await mkdir(join(root, "dist"), { recursive: true });
     await writeFile(join(root, "dist", "bundle.js"), "bundle\n");
-    await mkdir(join(root, "dist-web"), { recursive: true });
-    await writeFile(join(root, "dist-web", "bundle.js"), "bundle\n");
     await mkdir(join(root, "build-test"), { recursive: true });
     await writeFile(join(root, "build-test", "test.js"), "test\n");
     await mkdir(join(root, "evidence"), { recursive: true });

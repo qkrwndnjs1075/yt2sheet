@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isYouTubeWatchUrl, parseYouTubeVideoId } from "../src/shared/youtube.js";
+import { isYouTubeWatchUrl, parseYouTubeVideoId } from "../cli/youtube.js";
 
 test("validates YouTube watch URLs only", () => {
   assert.equal(isYouTubeWatchUrl("https://www.youtube.com/watch?v=abc123XYZ_0"), true);

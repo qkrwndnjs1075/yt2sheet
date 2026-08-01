@@ -1,3 +1,93 @@
+# Complete score preservation after deduplication (2026-08-01)
+
+## Plan
+
+- [x] Render the exact newly generated PDF and map every visible score region back to accepted and discarded source frames.
+- [x] Determine whether incompleteness comes from representative selection, over-broad identity, or page composition.
+- [x] Add failing regressions for complete duplicate representative selection and right-edge composer-text preservation.
+- [x] Implement the smallest completeness-aware fixes without reintroducing duplicate sheets or publisher logos.
+- [x] Run full verification, reinstall the standalone CLI, regenerate the original 0–30 second request, and inspect every page.
+
+## Review
+
+- Root cause 1: sequential deduplication always retained the first matching frame, so a titleless opening frame won over a later capture containing the full title and score metadata.
+- Root cause 2: the top-right logo cleaner classified disconnected glyphs individually, so the final `in` of `Frédéric Chopin` crossed the 90% edge threshold and was erased as if it were a logo.
+- Fix: duplicate clusters now replace their representative only when a later matched crop has at least 4% more vertical score context. Top-right components are grouped into nearby text before deciding whether the whole group begins inside the logo zone.
+- Red/green evidence: the representative test retained `score-0001.png` before the fix and `score-0002.png` after it. The composer-name regression reduced 231 trailing dark pixels to 94 before the fix and preserves all 231 after it; the existing publisher-logo removal test remains green.
+- Verification: typecheck and CLI build passed. The complete suite compiled to an alternate output because the editor held the existing `build-test` directory open; all 163 tests ran with 162 passed, 0 failed, and 1 Windows symlink-permission skip.
+- Installed QA: the final installed module hashes match `dist-cli`. The exact user command produced `C:\Users\qkrwn\yt2sheet\yt2sheet-algM0c_u99k-7.pdf` (1 page, 543,917 bytes). Its rendered page contains the full title, `B.150`, `Allegretto`, complete `Frédéric Chopin`, both opening systems, and both distinct continuation systems with no repeated opening or clipped score boundary.
+
+# CLI-only repository cleanup (2026-08-01)
+
+## Plan
+
+- [x] Record the CLI-only product boundary and preserve existing local changes.
+- [x] Move CLI-required processing and benchmark modules out of server/src paths.
+- [x] Remove HTTP server, web frontend, extension, and obsolete deployment/test surfaces.
+- [x] Update package metadata, TypeScript configs, imports, and lockfile for CLI-only builds.
+- [x] Run focused tests, typecheck, CLI build, and compiled CLI smoke validation.
+
+## Review
+
+- CLI processing now lives under `pipeline/`, benchmark tooling under `benchmarks/`, and the CLI owns its local job contracts.
+- Removed the HTTP server, web frontend, Chrome extension, Docker/Vite configuration, obsolete frontend design document, server fixture, and their tests.
+- `package.json`, TypeScript configs, and the lockfile now describe a CLI-only package; the packed artifact contains only CLI/pipeline code and the installer.
+- Validation: `npm run typecheck`, CLI build, compiled `yt2 --help`, package dry-run, and `git diff --check` passed. `npm test` ran 161 tests with 159 passing, 1 Windows symlink test skipped, and 1 pre-existing moving-cyan-overlay failure in `tests/pipeline-score-video-processor.test.ts`.
+
+# CLI duplicate sheet-content repair (2026-08-01)
+
+## Plan
+
+- [x] Render and inspect the exact installed-CLI PDFs to locate repeated score regions.
+- [x] Trace the active CLI's score-identity and page-composition path against the observed duplication.
+- [x] Add a failing regression for the confirmed duplicate mechanism and implement the minimal fix.
+- [x] Rebuild the standalone CLI, reproduce with the original command, inspect every output page, and remove debug artifacts.
+
+## Review
+
+- Root cause: `frame-000007` and `frame-000009` contained the same opening notation, but the title was absent in the former and visible in the latter. The crop detector therefore reported unrelated staff gaps (8.999 and 13.871), while the normalized images measured 894px and 987px tall. The old identity resized each whole crop, so its notation overlap and the crop-derived staff-gap guard both failed.
+- Fix: `createNotationIdentity` now maps only the vertical range that contains detected staff rows. Its staff-gap comparison is derived from those same staff rows rather than the outer score crop. Moving cyan playback residue and faint UI content remain excluded only from the deduplication identity image; the rendered score pixels and difference-hash contract are unchanged.
+- Regression: a delayed-title frame now fails as a duplicate before the fix and passes as `notation-identity` after it; the moving-playback identical case passes and the changed-notation counterpart remains distinct.
+- Verification: `npm run verify` passed (typecheck, 161 tests passed, 1 Windows symlink-permission skip, CLI build). The active standalone processor hash matches the tested build. The exact user command created `C:\Users\qkrwn\yt2sheet\yt2sheet-algM0c_u99k-4.pdf` (544,864 bytes): it parses as a one-page PDF and its rendered page contains the opening score plus a later distinct score region, not two copies of the opening.
+
+# CLI repeated PDF output preservation (2026-08-01)
+
+## Plan
+
+- [x] Reproduce the repeated default CLI output collision and trace parser-to-copy behavior.
+- [x] Add a failing CLI job regression proving a second default export preserves the first PDF and receives a distinct path.
+- [x] Allocate default output names atomically while keeping explicit `--output` replacement behavior unchanged.
+- [x] Run focused CLI tests, type checks, builds, and the compiled `yt2` command twice against a deterministic local processor.
+- [x] Remove debug artifacts and document the result.
+
+## Review
+
+- Root cause: the default output path was always `./yt2sheet/yt2sheet-<videoId>.pdf`, and `copyFile` unconditionally replaced that destination on every run.
+- Fix: a default output now uses an exclusive copy and advances from the original name to `-2`, `-3`, and so on when a PDF already exists. An explicit `--output` remains an intentional replacement path.
+- Regression: the new CLI job test fails against the former overwrite behavior and now proves the first PDF remains intact while the second receives `-2.pdf`; a paired test preserves explicit-output replacement semantics.
+- Live installed CLI: the user-facing PowerShell launcher at `C:\Users\qkrwn\AppData\Local\yt2sheet\bin\yt2.ps1` was replaced with the verified local standalone bundle. The installed `job.js` SHA-256 matches the tested build and `yt2 help` reports the numbered-default policy.
+- Manual QA: five successive executions of the user-supplied URL and `[0,30)` range produced `yt2sheet-algM0c_u99k.pdf`, `-2.pdf`, `-3.pdf`, `-4.pdf`, and `-5.pdf`. Every file parsed as a two-page PDF with a distinct SHA-256 digest.
+- Validation: focused CLI tests (12/12), `npm run typecheck`, `npm run build:cli`, `npm run build:web`, `npm run build`, and `git diff --check` passed. The full `npm test` has one pre-existing, unrelated failure: moving-cyan-overlay score deduplication still exports two scores instead of one.
+
+# Standalone repeated PDF result investigation (2026-08-01)
+
+## Plan
+
+- [x] Start the current standalone app and reproduce the historical failed score-generation submission through the API.
+- [x] Trace job IDs, output paths, result URLs, frontend state, and historical logs to identify why no new PDF was available.
+- [x] Add a failing regression for a no-dominant-ink image and implement the smallest frame-level rejection fix.
+- [x] Verify the focused regression, type checks, builds, a fresh historical-video PDF, and a two-request browser/API run with distinct PDF artifacts.
+- [x] Remove debugging artifacts and record the root cause and evidence.
+
+## Review
+
+- Root cause: `createDominantInkHash` threw `RangeError` when one accepted crop normalized to no connected notation ink. This aborted the entire job, so no new PDF existed and the user only saw a prior browser download.
+- Fix: the missing-dominant-ink condition is now an explicit `null` result; `analyzeFrame` rejects only that frame while propagating all other image and media errors.
+- RED/GREEN: the new blank-image contract failed with the exact historical `RangeError`, then passed by returning `null`; existing positive hash tests now explicitly prove their valid inputs have hashes.
+- Live API: the formerly failing `gnge1uSS2Rk` request completed under new job `8cf881e5-16b3-4407-8183-4f04a8a4f53b`, returned a unique job-scoped download URL, and produced a 14,361,747-byte, 31-page parseable PDF.
+- Browser QA: two real Chromium submissions produced distinct download URLs and files; the first was one page and the second was two pages, with the page visibly replaced by the second completed result and no browser console errors. The expected download handoff reports `net::ERR_ABORTED` to Playwright.
+- Validation: `npm run typecheck`, focused RED/GREEN test, CLI/web/extension builds, and `git diff --check` passed. `npm run verify` is blocked only by the pre-existing moving-cyan-overlay dedup test, which failed before this fix as well (`2 !== 1`); 344 tests passed and one Windows symlink test was skipped.
+
 # Live PDF tracker-line regression (2026-08-01)
 
 ## Plan
@@ -1815,3 +1905,16 @@
 - `main` was pushed to `origin/main`; annotated tag `cli-v0.2.9` was pushed and its peeled ref resolves to `932ddb1122dc0e56ede1a8a6d63a3ed237d56661`.
 - Release workflow `30688423109` completed all four platform builds and the GitHub Release job successfully. Release `yt2sheet cli-v0.2.9` is published with Windows x64 ZIP, macOS Intel/ARM64 tarballs, Linux x64 tarball, and `checksums.txt`.
 - The published checksum file matches all four asset digests: Windows `f1ae42f3891ca5c5fcdacb2001d3708d96571713620adb11ff44a94b8eea3bb3`, macOS Intel `7c8be9099d025103e16a8a621495d2ea5be56d6b9cc9553eb01b84f5c57b5245`, macOS ARM64 `843731d727da8c13d072e541b749c0cf37174c543511a04af0bfa915c8be8ea6`, Linux `e047da37c95c3cab888fae30a370f1544726ee2d4dd9f00c8b55a6b8c424114e`.
+# CLI-only repository cleanup (2026-08-01)
+
+## Plan
+
+- [ ] Record the CLI-only product boundary and preserve existing local changes.
+- [ ] Move CLI-required processing and benchmark modules out of server/src paths.
+- [ ] Remove HTTP server, web frontend, extension, and obsolete deployment/test surfaces.
+- [ ] Update package metadata, TypeScript configs, imports, and lockfile for CLI-only builds.
+- [ ] Run focused tests, typecheck, CLI build, and compiled CLI smoke validation.
+
+## Review
+
+- In progress.

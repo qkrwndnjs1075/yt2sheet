@@ -1,12 +1,13 @@
+import { constants } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { assertMediaTools, defaultMediaTools, type MediaTools } from "../server/media-tools";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { assertMediaTools, defaultMediaTools, type MediaTools } from "../pipeline/media-tools";
 import {
   type ScoreJobProcessor,
   type ScoreJobProcessorContext
-} from "../server/score-job-service";
-import type { ScoreTimeRange } from "../server/score-time-range";
+} from "../pipeline/job-contract";
+import type { ScoreTimeRange } from "../pipeline/score-time-range";
 import { resolveCliMediaTools } from "./media-tools";
 import type { YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
@@ -14,6 +15,7 @@ export type CliJobOptions = {
   readonly videoId: string;
   readonly videoUrl: string;
   readonly outputPath: string;
+  readonly overwriteOutput?: true;
   readonly cookiesPath?: string;
   readonly timeRange?: ScoreTimeRange;
   readonly signal?: AbortSignal;
@@ -53,16 +55,43 @@ export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
     );
 
     await mkdir(dirname(outputPath), { recursive: true });
-    await copyFile(result.filePath, outputPath);
-    return { outputPath, pageCount: result.pageCount };
+    const finalOutputPath = options.overwriteOutput === true
+      ? await copyReplacingOutput(result.filePath, outputPath)
+      : await copyWithoutReplacingOutput(result.filePath, outputPath);
+    return { outputPath: finalOutputPath, pageCount: result.pageCount };
   } finally {
     await rm(dataRoot, { recursive: true, force: true });
   }
 }
 
+async function copyReplacingOutput(sourcePath: string, outputPath: string): Promise<string> {
+  await copyFile(sourcePath, outputPath);
+  return outputPath;
+}
+
+async function copyWithoutReplacingOutput(sourcePath: string, outputPath: string): Promise<string> {
+  const extension = extname(outputPath);
+  const stem = basename(outputPath, extension);
+  const directory = dirname(outputPath);
+  for (let version = 1; ; version += 1) {
+    const candidate = version === 1 ? outputPath : join(directory, `${stem}-${version}${extension}`);
+    try {
+      await copyFile(sourcePath, candidate, constants.COPYFILE_EXCL);
+      return candidate;
+    } catch (error) {
+      if (isExistingDestination(error)) continue;
+      throw error;
+    }
+  }
+}
+
+function isExistingDestination(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EEXIST";
+}
+
 async function createDefaultProcessor(dataRoot: string, tools: MediaTools): Promise<ScoreJobProcessor> {
   process.env.YT2SHEET_LOG_LEVEL ??= "silent";
-  const { YouTubeScoreProcessor } = await import("../server/youtube-score-processor");
+  const { YouTubeScoreProcessor } = await import("../pipeline/youtube-score-processor");
   return new YouTubeScoreProcessor({ dataRoot, tools });
 }
 

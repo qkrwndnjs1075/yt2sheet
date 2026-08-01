@@ -5,16 +5,12 @@
     "moduleResolution": "Node",
     "outDir": "build-test",
     "noEmit": false,
-    "types": ["node", "chrome"]
+    "types": ["node"]
   },
   "include": [
     "cli/**/*.ts",
-    "src/shared/**/*.ts",
-    "src/offscreen/layout/**/*.ts",
-    "src/offscreen/frame-sink.ts",
-    "src/offscreen/debug-frame-sink.ts",
-    "src/background/score-export-download.ts",
-    "server/**/*.ts",
+    "pipeline/**/*.ts",
+    "benchmarks/**/*.ts",
     "tests/**/*.ts"
   ]
 }
