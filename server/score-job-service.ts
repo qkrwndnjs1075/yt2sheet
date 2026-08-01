@@ -3,12 +3,14 @@ import { constants } from "node:fs";
 import { lstat, open, realpath, unlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { deriveScoreQualitySidecarPath } from "./score-quality-report";
+import type { ScoreTimeRange } from "./score-time-range";
 
 // allow: SIZE_OK - reviewed Todo 2 confines the job state machine and its result capability to this service.
 
 export type ScoreJobInput = {
   readonly videoId: string;
   readonly videoUrl: string;
+  readonly timeRange?: ScoreTimeRange;
 };
 
 export type ScoreJobResult = {

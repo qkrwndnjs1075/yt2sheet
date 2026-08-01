@@ -38,6 +38,20 @@ Without `--output`, the PDF is saved in a `yt2sheet` subfolder of the folder whe
 
 In PowerShell, wrap the entire URL in double quotes when it contains `&`; otherwise PowerShell treats `&` as an operator before `yt2` can receive the URL.
 
+### Time range
+
+`--start` and `--end` are optional decimal seconds defining the half-open interval `[start,end)`.
+An omitted `--start` means `0`; an omitted `--end` means the video duration.
+The interval requires start < end (end must be greater than start).
+The range must fit the video duration: `start < duration` and `end <= duration`.
+Ranges outside the video duration are rejected before media processing starts.
+
+For example, process seconds 12.5 through 30 (excluding 30):
+
+```sh
+yt2 "https://www.youtube.com/watch?v=VIDEO_ID" --start 12.5 --end 30
+```
+
 ## Uninstall
 
 To remove a standalone installation, run:

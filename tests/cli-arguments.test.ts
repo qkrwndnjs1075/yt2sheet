@@ -38,6 +38,109 @@ test("parses output and cookie options", () => {
   });
 });
 
+test("parses separated and attached time-range options", () => {
+  const result = parseCliArguments([
+    "--start",
+    "12.5",
+    "--end=30",
+    "https://youtu.be/1yCkz9VT3ZA"
+  ], "C:/work");
+
+  assert.deepEqual(result, {
+    kind: "ok",
+    command: {
+      kind: "run",
+      videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+      videoId: "1yCkz9VT3ZA",
+      outputPath: resolve("C:/work", "yt2sheet", "yt2sheet-1yCkz9VT3ZA.pdf"),
+      timeRange: {
+        startTimeSec: 12.5,
+        endTimeSec: 30
+      }
+    }
+  });
+});
+
+test("preserves only the supplied time-range property", () => {
+  const startOnly = parseCliArguments([
+    "--start=0",
+    "https://youtu.be/1yCkz9VT3ZA"
+  ], "C:/work");
+  const endOnly = parseCliArguments([
+    "--end",
+    "45",
+    "https://youtu.be/1yCkz9VT3ZA"
+  ], "C:/work");
+
+  assert.deepEqual(startOnly, {
+    kind: "ok",
+    command: {
+      kind: "run",
+      videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+      videoId: "1yCkz9VT3ZA",
+      outputPath: resolve("C:/work", "yt2sheet", "yt2sheet-1yCkz9VT3ZA.pdf"),
+      timeRange: { startTimeSec: 0 }
+    }
+  });
+  assert.deepEqual(endOnly, {
+    kind: "ok",
+    command: {
+      kind: "run",
+      videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+      videoId: "1yCkz9VT3ZA",
+      outputPath: resolve("C:/work", "yt2sheet", "yt2sheet-1yCkz9VT3ZA.pdf"),
+      timeRange: { endTimeSec: 45 }
+    }
+  });
+});
+
+test("rejects malformed, duplicate, and inverted time ranges", () => {
+  const invalidValues = [
+    "",
+    "-1",
+    "+1",
+    "01",
+    "1e2",
+    "0x10",
+    "NaN",
+    "Infinity",
+    "9".repeat(400)
+  ];
+
+  for (const value of invalidValues) {
+    assert.equal(parseCliArguments([`--start=${value}`, "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  }
+  assert.equal(parseCliArguments(["--start", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--end", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  const startEmptyAttachedArgs = new Proxy<readonly string[]>(["--start=", "https://youtu.be/1yCkz9VT3ZA"], {
+    get(target, property, receiver) {
+      if (property === "1") throw new Error("attached empty option consumed the URL");
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  const endEmptyAttachedArgs = new Proxy<readonly string[]>(["--end=", "https://youtu.be/1yCkz9VT3ZA"], {
+    get(target, property, receiver) {
+      if (property === "1") throw new Error("attached empty option consumed the URL");
+      return Reflect.get(target, property, receiver);
+    }
+  });
+
+  assert.deepEqual(parseCliArguments(startEmptyAttachedArgs, "C:/work"), {
+    kind: "error",
+    message: "--start requires a decimal number."
+  });
+  assert.deepEqual(parseCliArguments(endEmptyAttachedArgs, "C:/work"), {
+    kind: "error",
+    message: "--end requires a decimal number."
+  });
+  assert.equal(parseCliArguments(["--start= 1", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--start", " 1 ", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--start=1", "--start=2", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--end=1", "--end", "2", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--start=5", "--end=5", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["--start=5", "--end=4", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+});
+
 test("returns help for conventional help entry points", () => {
   assert.deepEqual(parseCliArguments([], "C:/work"), { kind: "help" });
   assert.deepEqual(parseCliArguments(["help"], "C:/work"), { kind: "help" });

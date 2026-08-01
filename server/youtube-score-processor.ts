@@ -5,6 +5,7 @@ import pino from "pino";
 import { defaultMediaTools, runProcess, type MediaTools, type RunOptions } from "./media-tools";
 import { deriveScoreQualitySidecarPath, serializeScoreExtractionQualityReport } from "./score-quality-report";
 import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type ScoreJobProcessorContext, type ScoreJobResult } from "./score-job-service";
+import { resolveScoreTimeRange, type ResolvedScoreTimeRange, type ScoreTimeRange } from "./score-time-range";
 import { createScorePdfFromFrames, listExtractedFrames } from "./score-video-processor";
 import { createOwnedWorkDirectoryName } from "./workspace-cleanup";
 
@@ -66,7 +67,8 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       throwIfCancelled(signal);
       await Promise.all([mkdir(frameDirectory, { recursive: true }), mkdir(resultDirectory, { recursive: true })]);
       throwIfCancelled(signal);
-      const duration = await this.readRemoteDuration(input.videoUrl, signal);
+      const remoteDuration = await this.readRemoteDuration(input.videoUrl, signal);
+      this.resolveTimeRange(input.timeRange, remoteDuration);
       throwIfCancelled(signal);
       onProgress(12);
       throwIfCancelled(signal);
@@ -74,10 +76,11 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       throwIfCancelled(signal);
       onProgress(32);
       throwIfCancelled(signal);
-      const verifiedDuration = await this.readLocalDuration(videoPath, signal);
-      this.assertDuration(verifiedDuration || duration);
+      const localDuration = await this.readLocalDuration(videoPath, signal);
+      this.assertDuration(localDuration);
+      const timeRange = this.resolveTimeRange(input.timeRange, localDuration);
       throwIfCancelled(signal);
-      await this.extractFrames(videoPath, frameDirectory, verifiedDuration || duration, signal);
+      await this.extractFrames(videoPath, frameDirectory, timeRange, signal);
       throwIfCancelled(signal);
       onProgress(45);
       throwIfCancelled(signal);
@@ -191,8 +194,16 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     return Number(output.trim());
   }
 
-  private async extractFrames(videoPath: string, frameDirectory: string, duration: number, signal: AbortSignal): Promise<void> {
-    await this.processRunner(this.tools.ffmpeg, buildFrameExtractionArguments(videoPath, frameDirectory, duration), { signal });
+  private async extractFrames(videoPath: string, frameDirectory: string, timeRange: ResolvedScoreTimeRange, signal: AbortSignal): Promise<void> {
+    await this.processRunner(this.tools.ffmpeg, buildFrameExtractionArguments(videoPath, frameDirectory, timeRange), { signal });
+  }
+
+  private resolveTimeRange(timeRange: ScoreTimeRange | undefined, duration: number): ResolvedScoreTimeRange {
+    const resolution = resolveScoreTimeRange(timeRange, duration);
+    if (resolution.kind === "invalid") {
+      throw new ScorePipelineError("INVALID_TIME_RANGE", "요청한 시간 범위를 영상 길이에 맞게 확인해 주세요.");
+    }
+    return resolution;
   }
 
   private assertDuration(duration: number): void {
@@ -287,11 +298,19 @@ function isFileSystemError(error: unknown): boolean {
   return error instanceof Error && "code" in error;
 }
 
-export function buildFrameExtractionArguments(videoPath: string, frameDirectory: string, duration: number): string[] {
+export function buildFrameExtractionArguments(
+  videoPath: string,
+  frameDirectory: string,
+  durationOrRange: number | ResolvedScoreTimeRange
+): string[] {
+  const timeRange = typeof durationOrRange === "number" ? undefined : durationOrRange;
+  const duration = typeof durationOrRange === "number" ? durationOrRange : durationOrRange.sampleDurationSec;
   const interval = Math.max(0.5, duration / MAX_EXTRACTED_FRAMES);
   const framesPerSecond = Number((1 / interval).toFixed(6));
   return [
     "-hide_banner", "-loglevel", "error", "-i", videoPath,
+    ...(timeRange?.kind === "explicit" && timeRange.hasStartBound ? ["-ss", String(timeRange.startTimeSec)] : []),
+    ...(timeRange?.kind === "explicit" && timeRange.hasEndBound ? ["-t", String(timeRange.sampleDurationSec)] : []),
     "-vf", `fps=${framesPerSecond}`,
     "-q:v", "2",
     "-frames:v", String(MAX_EXTRACTED_FRAMES), join(frameDirectory, "frame-%06d.jpg")

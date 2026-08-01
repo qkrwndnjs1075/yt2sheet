@@ -20,6 +20,8 @@ Commands:
 Options:
   -o, --output <path>   Write the PDF to <path>
       --cookies <path>  Use a user-owned Netscape cookies file
+      --start <seconds> Start time in seconds (optional; omitted means 0)
+      --end <seconds>   End time in seconds (optional; omitted means video duration)
   -h, --help            Show this help message
 
 Examples:
@@ -29,6 +31,13 @@ Examples:
 
 PowerShell:
   If the URL contains &, wrap the entire URL in double quotes.
+
+Time range:
+  --start and --end are optional decimal seconds defining the half-open interval [start,end).
+  An omitted --start means 0; an omitted --end means the video duration.
+  The interval requires start < end (end must be greater than start).
+  The range must fit the video duration: start < duration and end <= duration.
+  Ranges outside the video duration are rejected before media processing starts.
 
 Output:
   Without --output, writes ./yt2sheet/yt2sheet-<videoId>.pdf in the current directory.

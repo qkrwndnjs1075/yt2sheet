@@ -6,6 +6,7 @@ import {
   type ScoreJobProcessor,
   type ScoreJobProcessorContext
 } from "../server/score-job-service";
+import type { ScoreTimeRange } from "../server/score-time-range";
 import { resolveCliMediaTools } from "./media-tools";
 import type { YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
@@ -14,6 +15,7 @@ export type CliJobOptions = {
   readonly videoUrl: string;
   readonly outputPath: string;
   readonly cookiesPath?: string;
+  readonly timeRange?: ScoreTimeRange;
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: number) => void;
   readonly onInstallProgress?: YtDlpBootstrapProgressHandler;
@@ -42,7 +44,11 @@ export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
     const processor = options.processorFactory?.({ dataRoot, tools })
       ?? await createDefaultProcessor(dataRoot, tools);
     const result = await processor.process(
-      { videoId: options.videoId, videoUrl: options.videoUrl },
+      {
+        videoId: options.videoId,
+        videoUrl: options.videoUrl,
+        ...(options.timeRange === undefined ? {} : { timeRange: options.timeRange })
+      },
       createProcessorContext(options.signal, options.onProgress)
     );
 

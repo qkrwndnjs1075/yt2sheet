@@ -42,6 +42,148 @@ describe("YouTube score frame extraction", () => {
     assert.equal(args[args.indexOf("-q:v") + 1], "2");
     assert.equal(output, "frames\\frame-%06d.jpg");
   });
+
+  it("places fractional input trim flags after the input while retaining the frame cap", () => {
+    // Given: an explicitly bounded fractional range.
+    const timeRange = {
+      kind: "explicit",
+      startTimeSec: 1.25,
+      endTimeSec: 3.75,
+      sampleDurationSec: 2.5,
+      hasStartBound: true,
+      hasEndBound: true
+    } as const;
+
+    // When: FFmpeg extraction arguments are built for the range.
+    const args = buildFrameExtractionArguments("source.mp4", "frames", timeRange);
+
+    // Then: accurate input seeking and duration trimming preserve fractional seconds.
+    assert.equal(args.indexOf("-ss"), args.indexOf("-i") + 2);
+    assert.equal(args[args.indexOf("-ss") + 1], "1.25");
+    assert.equal(args[args.indexOf("-t") + 1], "2.5");
+    assert.equal(args[args.indexOf("-vf") + 1], "fps=2");
+    assert.equal(args[args.indexOf("-frames:v") + 1], "3600");
+  });
+
+  it("does not trim a full-video extraction or yt-dlp download", () => {
+    // Given: the existing full-video download and extraction contracts.
+    const downloadArgs = buildVideoDownloadArguments("https://www.youtube.com/watch?v=video-id", "work", "ffmpeg");
+
+    // When: full-video FFmpeg arguments are built without a resolved explicit range.
+    const extractionArgs = buildFrameExtractionArguments("source.mp4", "frames", 60);
+
+    // Then: neither adapter receives partial-download or trim flags.
+    assert.equal(downloadArgs.includes("--download-sections"), false);
+    assert.equal(extractionArgs.includes("-ss"), false);
+    assert.equal(extractionArgs.includes("-t"), false);
+  });
+});
+
+describe("YouTube score time ranges", () => {
+  it("rejects a range outside remote duration before download or FFmpeg", async (t) => {
+    // Given: a remote duration shorter than the requested end bound.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-remote-range-");
+    const calls: { readonly executable: string; readonly args: readonly string[] }[] = [];
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        calls.push({ executable, args });
+        return "60";
+      }
+    });
+
+    // When: processing resolves the range immediately after the duration probe.
+    const result = processor.process({ ...jobInput(), timeRange: { startTimeSec: 10, endTimeSec: 60.5 } }, createContext(new AbortController().signal));
+
+    // Then: the range error escapes and no media acquisition or FFmpeg process begins.
+    await assert.rejects(result, { code: "INVALID_TIME_RANGE" });
+    assert.equal(calls.filter((call) => call.executable === "yt-dlp-test" && !call.args.includes("--skip-download")).length, 0);
+    assert.equal(calls.filter((call) => call.executable === "ffmpeg-test").length, 0);
+  });
+
+  it("rejects an end beyond authoritative local duration before FFmpeg", async (t) => {
+    // Given: metadata reports 120 seconds but the downloaded file is only 60 seconds.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-local-range-");
+    let downloadCalls = 0;
+    let ffmpegCalls = 0;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "120";
+        if (executable === "yt-dlp-test") {
+          downloadCalls += 1;
+          return args[args.indexOf("-o") + 1]?.replace("%(ext)s", "mp4") ?? "";
+        }
+        if (executable === "ffprobe-test") return "60";
+        if (executable === "ffmpeg-test") ffmpegCalls += 1;
+        return "";
+      }
+    });
+
+    // When: the requested end fits remote metadata but exceeds the local file.
+    const result = processor.process({ ...jobInput(), timeRange: { endTimeSec: 60.5 } }, createContext(new AbortController().signal));
+
+    // Then: the completed full download is followed by a range error and zero FFmpeg calls.
+    await assert.rejects(result, { code: "INVALID_TIME_RANGE" });
+    assert.equal(downloadCalls, 1);
+    assert.equal(ffmpegCalls, 0);
+  });
+
+  it("rejects a non-positive local duration as an invalid video before FFmpeg", async (t) => {
+    // Given: valid remote metadata and an invalid downloaded-file duration.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-invalid-local-duration-");
+    let ffmpegCalls = 0;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "120";
+        if (executable === "yt-dlp-test") return args[args.indexOf("-o") + 1]?.replace("%(ext)s", "mp4") ?? "";
+        if (executable === "ffprobe-test") return "0";
+        if (executable === "ffmpeg-test") ffmpegCalls += 1;
+        return "";
+      }
+    });
+
+    // When: local ffprobe returns zero.
+    const result = processor.process({ ...jobInput(), timeRange: { startTimeSec: 1 } }, createContext(new AbortController().signal));
+
+    // Then: INVALID_VIDEO wins and extraction never starts.
+    await assert.rejects(result, { code: "INVALID_VIDEO" });
+    assert.equal(ffmpegCalls, 0);
+  });
+
+  it("accepts an end equal to local duration and extracts the locally resolved range", async (t) => {
+    // Given: remote metadata longer than the downloaded file and an end exactly on the local boundary.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-local-boundary-");
+    let extractionArgs: readonly string[] | undefined;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "120";
+        if (executable === "yt-dlp-test") return args[args.indexOf("-o") + 1]?.replace("%(ext)s", "mp4") ?? "";
+        if (executable === "ffprobe-test") return "60";
+        if (executable === "ffmpeg-test") extractionArgs = args;
+        return "";
+      },
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, outputPath) => {
+        await writeFile(outputPath, "%PDF-test");
+        return { pageCount: 1, scoreCount: 1 };
+      }
+    });
+
+    // When: the explicit range ends exactly at local EOF.
+    await processor.process({ ...jobInput(), timeRange: { startTimeSec: 10, endTimeSec: 60 } }, createContext(new AbortController().signal));
+
+    // Then: local duration authorizes the range and the exact 50-second trim reaches FFmpeg.
+    assert.ok(extractionArgs);
+    assert.equal(extractionArgs[extractionArgs.indexOf("-ss") + 1], "10");
+    assert.equal(extractionArgs[extractionArgs.indexOf("-t") + 1], "50");
+  });
 });
 
 describe("YouTube score cancellation", () => {
