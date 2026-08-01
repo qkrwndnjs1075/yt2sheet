@@ -1666,3 +1666,20 @@
 - Failing-first coverage previously saw only the outer `Invoke-Expression` position; it now identifies `$client.DownloadFile(...)` and `Download-InstallFile` when the deliberate closed-endpoint failure occurs. Focused installer tests passed 2/2, and `npm run verify` exited 0 with 314 passing tests, one Windows symlink-permission skip, plus successful CLI, standalone web, and extension builds.
 - Pushed `ad692d6` (`fix(installer): harden raw PowerShell bootstrap`) to `main` and tagged `cli-v0.2.5`. Release workflow `30681842359` completed all four platform builds and published the GitHub Release; every archive digest matches the public `checksums.txt`.
 - A profile-loaded Windows PowerShell process ran `irm 'https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1?v=0.2.5' | iex` through stages 1/7 to 7/7, installed `yt2sheet 0.2.5 windows-x64`, returned the expected `yt2 help`, and removed the isolated install root through `yt2 uninstall` while restoring the user PATH.
+
+# G073 Stable latest installer command (2026-08-01)
+
+## Plan
+
+- [x] Add a failing contract for an unversioned public command and dynamic latest-release downloads.
+- [x] Make Windows and Unix installers use GitHub's latest-release redirect by default while preserving explicit tag and base-URL overrides.
+- [x] Restore the unversioned README command and run focused plus full verification.
+- [x] Publish the patch release, verify checksums, and prove the literal public install/help/uninstall flow.
+
+## Review
+
+- Root cause: the user's last command omitted `| iex`, so `irm` correctly printed the downloaded source instead of executing it. Separately, the installer and README pinned `cli-v0.2.5`, which contradicted the requested stable "install latest" contract.
+- Both installers now use `https://github.com/<repository>/releases/latest/download` by default. `YT2SHEET_RELEASE_BASE_URL` remains the highest-priority override, and an explicit `ReleaseTag`/`YT2SHEET_RELEASE_TAG` still selects a reproducible tagged release.
+- RED/GREEN evidence: the new unversioned/latest contract failed against the pinned implementation with no `releases/latest/download` path, then both focused installer tests passed after the change. `npm run verify` passed 314 tests with one Windows symlink-permission skip and built the CLI, standalone web app, and extension.
+- Pushed `140414a` (`fix(installer): resolve latest release dynamically`) and tagged `cli-v0.2.6`. Release workflow `30682385003` completed every platform build and published the release; all four archive digests match the public latest `checksums.txt`.
+- A profile-loaded Windows PowerShell process ran the literal unversioned `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex`, completed stages 1/7 through 7/7, selected `yt2sheet 0.2.6 windows-x64`, returned `yt2 help`, and removed the isolated root through `yt2 uninstall` while restoring the user PATH.
