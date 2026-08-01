@@ -96,3 +96,4 @@
 # 2026-08-01 - Verify raw installers in the user's exact PowerShell scope
 
 - A helper script or `-NoProfile` success is not sufficient evidence for a pasted `irm | iex` installer. Re-run the literal command in a profile-loaded PowerShell, capture the public payload identity and first failing inner line, and distinguish outer script-block scope failures from the interactive user path before declaring the installer fixed.
+- A successful fresh-process public installer run does not close a failure that still reproduces in the user's already-open PowerShell session. Capture that session's full `$Error[0]` record and command-resolution state before publishing another fix; do not substitute a nearby scope defect for the reported `InvokeMethodOnNull` mechanism.

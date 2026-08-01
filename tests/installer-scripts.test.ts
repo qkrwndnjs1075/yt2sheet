@@ -12,8 +12,8 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   ]);
 
   assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
-  assert.match(powershell, /"cli-v0\.2\.4"/, "the raw installer must default to the latest published CLI release");
-  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.4/, "the Unix installer must default to the same latest CLI release");
+  assert.match(powershell, /"cli-v0\.2\.5"/, "the raw installer must default to the latest published CLI release");
+  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.5/, "the Unix installer must default to the same latest CLI release");
   assert.match(powershell, /\(\?:release-assets\/\)\?/, "the PowerShell installer must accept GitHub Release checksum paths");
   assert.match(shell, /\$2 == "release-assets\/" name/, "the Unix installer must accept GitHub Release checksum paths");
   assert.match(powershell, /### \[\{0\}\/\{1\}\]/);
@@ -31,7 +31,7 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(bundleBuilder, /YT2SHEET_UNINSTALL_HANDOFF=launcher/, "the Windows launcher must hand final root deletion to the exited batch process");
   assert.match(bundleBuilder, /Start-Sleep -Milliseconds 250/, "the Windows launcher cleanup must wait for the launcher process to exit");
   assert.match(bundleBuilder, /Remove-Item -LiteralPath \$root -Recurse -Force/, "the Windows launcher must remove the bundle after the runtime exits");
-  assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1 \| iex/);
+  assert.match(readme, /irm 'https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1\?v=0\.2\.5' \| iex/);
   assert.match(readme, /yt2 "https:\/\/www\.youtube\.com\/watch\?v=VIDEO_ID"/);
   assert.match(readme, /wrap the entire URL in double quotes/);
 });
@@ -58,4 +58,7 @@ test("raw PowerShell installer reports progress inside an outer script block", {
   assert.notEqual(result.status, 0, "the isolated download should stop at the deliberately closed endpoint");
   assert.match(result.stdout, /### \[1\/7\].*\(14%\)/);
   assert.doesNotMatch(result.stderr, /divide by zero|null-valued expression/);
+  assert.match(result.stderr, /yt2 installer failed:/);
+  assert.match(result.stderr, /\$client\.DownloadFile\(\$Uri, \$Destination\)/);
+  assert.match(result.stderr, /at Download-InstallFile, <No file>: line \d+/);
 });

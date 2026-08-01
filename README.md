@@ -13,7 +13,7 @@ No programming setup is required. Paste the command for your computer into a ter
 Open Command Prompt or PowerShell, then run:
 
 ```powershell
-irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex
+irm 'https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1?v=0.2.5' | iex
 ```
 
 Run this command in the current PowerShell window if you want `yt2` to be available immediately. A child command such as `powershell -Command ...` cannot update the parent window's PATH; open a new terminal after that form. The installer prints `### [n/7]` stage markers while it downloads, verifies, and installs the bundle.
@@ -23,7 +23,7 @@ Run this command in the current PowerShell window if you want `yt2` to be availa
 Open Terminal, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.sh | sh
+curl -fsSL 'https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.sh?v=0.2.5' | sh
 ```
 
 ## Create a PDF

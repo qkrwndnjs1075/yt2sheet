@@ -6,8 +6,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$installer = {
+param(
+  [string]$ReleaseTag,
+  [string]$Repository,
+  [string]$InstallRoot
+)
+
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
-  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.4" } else { $env:YT2SHEET_RELEASE_TAG }
+  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.5" } else { $env:YT2SHEET_RELEASE_TAG }
 }
 if ([string]::IsNullOrWhiteSpace($Repository)) {
   $Repository = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_REPOSITORY)) { "qkrwndnjs1075/yt2sheet" } else { $env:YT2SHEET_REPOSITORY }
@@ -24,7 +31,7 @@ if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
   }
 }
 
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+$architecture = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 $target = switch ($architecture) {
   "X64" { "windows-x64"; break }
   default { throw "Windows $architecture 빌드는 아직 제공되지 않습니다. 현재는 Windows x64를 지원합니다." }
@@ -39,7 +46,7 @@ $baseUrl = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_BASE_URL)) {
 if ([string]::IsNullOrWhiteSpace($baseUrl)) {
   throw "Release download URL is empty. Set YT2SHEET_RELEASE_BASE_URL or provide a repository and release tag."
 }
-$baseUrl = $baseUrl.TrimEnd("/")
+$baseUrl = $baseUrl -replace "/+$", ""
 $progressState = [pscustomobject]@{
   CurrentStep = 0
   TotalSteps = 7
@@ -62,7 +69,7 @@ function Download-InstallFile {
 
   $client = $null
   try {
-    $client = New-Object System.Net.WebClient
+    $client = [System.Net.WebClient]::new()
     if ($null -eq $client) {
       throw "Unable to create the Windows download client."
     }
@@ -74,7 +81,7 @@ function Download-InstallFile {
     }
   }
 }
-$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("yt2sheet-install-" + [guid]::NewGuid().ToString("N"))
+$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("yt2sheet-install-{0:N}" -f [guid]::NewGuid())
 $archivePath = Join-Path $temporaryRoot $assetName
 $checksumsPath = Join-Path $temporaryRoot "checksums.txt"
 $stagingRoot = Join-Path $temporaryRoot "staged"
@@ -145,4 +152,19 @@ finally {
   if (Test-Path -LiteralPath $temporaryRoot) {
     Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
   }
+}
+}
+
+try {
+  & $installer -ReleaseTag $ReleaseTag -Repository $Repository -InstallRoot $InstallRoot
+}
+catch {
+  $failure = $_
+  $details = @(
+    "yt2 installer failed: $($failure.Exception.Message)"
+    $failure.InvocationInfo.PositionMessage
+    "Stack: $($failure.ScriptStackTrace)"
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  [Console]::Error.WriteLine(($details -join [Environment]::NewLine))
+  throw
 }
