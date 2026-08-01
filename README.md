@@ -34,7 +34,7 @@ Open a new terminal after installation and run:
 yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-The PDF is saved in the folder where you run the command.
+Without `--output`, the PDF is saved in a `yt2sheet` subfolder of the folder where you run the command.
 
 In PowerShell, wrap the entire URL in double quotes when it contains `&`; otherwise PowerShell treats `&` as an operator before `yt2` can receive the URL.
 

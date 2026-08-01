@@ -88,7 +88,7 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
       kind: "run",
       videoUrl,
       videoId,
-      outputPath: outputPath ?? resolve(cwd, `yt2sheet-${videoId}.pdf`),
+      outputPath: outputPath ?? resolve(cwd, "yt2sheet", `yt2sheet-${videoId}.pdf`),
       ...(cookiesPath ? { cookiesPath } : {})
     }
   };

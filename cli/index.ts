@@ -31,7 +31,7 @@ PowerShell:
   If the URL contains &, wrap the entire URL in double quotes.
 
 Output:
-  Without --output, writes ./yt2sheet-<videoId>.pdf in the current directory.
+  Without --output, writes ./yt2sheet/yt2sheet-<videoId>.pdf in the current directory.
   Videos are processed locally on your computer.
 
 Uninstall:

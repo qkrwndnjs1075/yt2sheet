@@ -12,7 +12,7 @@ test("parses a YouTube URL with the default PDF path", () => {
       kind: "run",
       videoUrl: "https://www.youtube.com/watch?v=1yCkz9VT3ZA",
       videoId: "1yCkz9VT3ZA",
-      outputPath: resolve("C:/work", "yt2sheet-1yCkz9VT3ZA.pdf")
+      outputPath: resolve("C:/work", "yt2sheet", "yt2sheet-1yCkz9VT3ZA.pdf")
     }
   });
 });

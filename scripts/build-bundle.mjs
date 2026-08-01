@@ -72,16 +72,63 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "YT2SHEET_ROOT=%~dp0.."
 set "YT_DLP_PATH=%YT2SHEET_ROOT%\\tools\\yt-dlp.exe"
 if /I "%~1"=="uninstall" if "%~2"=="" goto uninstall
-"%YT2SHEET_ROOT%\\runtime\\node.exe" "%YT2SHEET_ROOT%\\app\\dist-cli\\cli\\index.js" %*
-exit /b %ERRORLEVEL%
+set "YT2SHEET_UNINSTALL_HANDOFF="
+goto forward_args
 
 :uninstall
 set "YT2SHEET_UNINSTALL_HANDOFF=launcher"
-"%YT2SHEET_ROOT%\\runtime\\node.exe" "%YT2SHEET_ROOT%\\app\\dist-cli\\cli\\index.js" %*
-set "YT2_UNINSTALL_EXIT=!ERRORLEVEL!"
-if not "!YT2_UNINSTALL_EXIT!"=="0" exit /b !YT2_UNINSTALL_EXIT!
+goto forward_args
+
+:forward_args
+set "YT2SHEET_ARGS="
+:next_arg
+if "%~1"=="" goto invoke_cli
+set "YT2SHEET_ARGS=%YT2SHEET_ARGS% "%~1""
+shift
+goto next_arg
+
+:invoke_cli
+"%YT2SHEET_ROOT%\\runtime\\node.exe" "%YT2SHEET_ROOT%\\app\\dist-cli\\cli\\index.js" %YT2SHEET_ARGS%
+set "YT2SHEET_EXIT=!ERRORLEVEL!"
+if not defined YT2SHEET_UNINSTALL_HANDOFF exit /b !YT2SHEET_EXIT!
+if not "!YT2SHEET_EXIT!"=="0" exit /b !YT2SHEET_EXIT!
 start "" /b powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "$root = [Environment]::GetEnvironmentVariable('YT2SHEET_ROOT', 'Process'); Start-Sleep -Milliseconds 250; for ($attempt = 0; $attempt -lt 120 -and (Test-Path -LiteralPath $root); $attempt++) { try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 50 } }"
 exit /b 0
+`;
+}
+
+function windowsPowerShellLauncher() {
+  return `$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$node = Join-Path $root "runtime\\node.exe"
+$entry = Join-Path $root "app\\dist-cli\\cli\\index.js"
+$previousYtDlpPath = $env:YT_DLP_PATH
+$previousRoot = $env:YT2SHEET_ROOT
+$previousHandoff = $env:YT2SHEET_UNINSTALL_HANDOFF
+$exitCode = 0
+
+try {
+  $env:YT_DLP_PATH = Join-Path $root "tools\\yt-dlp.exe"
+  $env:YT2SHEET_ROOT = $root
+  if ($args.Count -eq 1 -and $args[0] -ieq "uninstall") {
+    $env:YT2SHEET_UNINSTALL_HANDOFF = "launcher"
+    & $node $entry @args
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+      $cleanupCommand = '$root = [Environment]::GetEnvironmentVariable(''YT2SHEET_ROOT'', ''Process''); Start-Sleep -Milliseconds 250; for ($attempt = 0; $attempt -lt 120 -and (Test-Path -LiteralPath $root); $attempt++) { try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 50 } }'
+      Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @("-NoProfile", "-NonInteractive", "-Command", $cleanupCommand)
+    }
+  } else {
+    $env:YT2SHEET_UNINSTALL_HANDOFF = $null
+    & $node $entry @args
+    $exitCode = $LASTEXITCODE
+  }
+} finally {
+  $env:YT_DLP_PATH = $previousYtDlpPath
+  $env:YT2SHEET_ROOT = $previousRoot
+  $env:YT2SHEET_UNINSTALL_HANDOFF = $previousHandoff
+}
+
+exit $exitCode
 `;
 }
 
@@ -133,6 +180,9 @@ await cp(ytDlpPath, bundledYtDlpPath);
 
 const launcherPath = join(binRoot, isWindows ? "yt2.cmd" : "yt2");
 await writeFile(launcherPath, isWindows ? windowsLauncher() : unixLauncher(), "utf8");
+if (isWindows) {
+  await writeFile(join(binRoot, "yt2.ps1"), windowsPowerShellLauncher(), "utf8");
+}
 await writeFile(
   join(outputRoot, "VERSION"),
   `${packageJson.name} ${packageJson.version} ${target}\n`,
