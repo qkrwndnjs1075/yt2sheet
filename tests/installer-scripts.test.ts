@@ -12,8 +12,12 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   ]);
 
   assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
-  assert.match(powershell, /"cli-v0\.2\.5"/, "the raw installer must default to the latest published CLI release");
-  assert.match(shell, /YT2SHEET_RELEASE_TAG:-cli-v0\.2\.5/, "the Unix installer must default to the same latest CLI release");
+  assert.match(powershell, /releases\/latest\/download/, "the raw installer must resolve the latest published CLI release without a version pin");
+  assert.match(shell, /releases\/latest\/download/, "the Unix installer must resolve the latest published CLI release without a version pin");
+  assert.doesNotMatch(powershell, /cli-v0\.2\.5/, "the raw installer command must not need a release-specific update");
+  assert.doesNotMatch(shell, /cli-v0\.2\.5/, "the Unix installer command must not need a release-specific update");
+  assert.match(powershell, /releases\/download\/\$ReleaseTag/, "an explicit PowerShell release tag must remain reproducible");
+  assert.match(shell, /releases\/download\/\$release_tag/, "an explicit Unix release tag must remain reproducible");
   assert.match(powershell, /\(\?:release-assets\/\)\?/, "the PowerShell installer must accept GitHub Release checksum paths");
   assert.match(shell, /\$2 == "release-assets\/" name/, "the Unix installer must accept GitHub Release checksum paths");
   assert.match(powershell, /### \[\{0\}\/\{1\}\]/);
@@ -31,7 +35,7 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(bundleBuilder, /YT2SHEET_UNINSTALL_HANDOFF=launcher/, "the Windows launcher must hand final root deletion to the exited batch process");
   assert.match(bundleBuilder, /Start-Sleep -Milliseconds 250/, "the Windows launcher cleanup must wait for the launcher process to exit");
   assert.match(bundleBuilder, /Remove-Item -LiteralPath \$root -Recurse -Force/, "the Windows launcher must remove the bundle after the runtime exits");
-  assert.match(readme, /irm 'https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1\?v=0\.2\.5' \| iex/);
+  assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1 \| iex/);
   assert.match(readme, /yt2 "https:\/\/www\.youtube\.com\/watch\?v=VIDEO_ID"/);
   assert.match(readme, /wrap the entire URL in double quotes/);
 });

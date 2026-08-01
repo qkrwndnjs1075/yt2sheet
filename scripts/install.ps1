@@ -14,7 +14,7 @@ param(
 )
 
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
-  $ReleaseTag = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_TAG)) { "cli-v0.2.5" } else { $env:YT2SHEET_RELEASE_TAG }
+  $ReleaseTag = $env:YT2SHEET_RELEASE_TAG
 }
 if ([string]::IsNullOrWhiteSpace($Repository)) {
   $Repository = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_REPOSITORY)) { "qkrwndnjs1075/yt2sheet" } else { $env:YT2SHEET_REPOSITORY }
@@ -38,10 +38,12 @@ $target = switch ($architecture) {
 }
 
 $assetName = "yt2sheet-$target.zip"
-$baseUrl = if ([string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_BASE_URL)) {
+$baseUrl = if (-not [string]::IsNullOrWhiteSpace($env:YT2SHEET_RELEASE_BASE_URL)) {
+  $env:YT2SHEET_RELEASE_BASE_URL
+} elseif (-not [string]::IsNullOrWhiteSpace($ReleaseTag)) {
   "https://github.com/$Repository/releases/download/$ReleaseTag"
 } else {
-  $env:YT2SHEET_RELEASE_BASE_URL
+  "https://github.com/$Repository/releases/latest/download"
 }
 if ([string]::IsNullOrWhiteSpace($baseUrl)) {
   throw "Release download URL is empty. Set YT2SHEET_RELEASE_BASE_URL or provide a repository and release tag."
