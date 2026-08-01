@@ -107,6 +107,23 @@
 - RED/GREEN: the new production-shaped identical-score test failed as two scores before the crop-analysis fix and passed as one score after it. Its paired changed-notation case remains two scores.
 - Validation: focused playback regression suite passed 4/4. `npm run typecheck`, full `npm test`, `npm run build:cli`, and `git diff --check` passed. Visual QA and live YouTube regeneration were intentionally not run by user request.
 
+# CLI v0.2.12 release (2026-08-01)
+
+## Release / installation
+
+- [x] Bump the CLI patch version to `0.2.12`, commit the CLI-only pipeline and complete-score fixes, and push `main`.
+- [x] Push annotated tag `cli-v0.2.12` and verify the four-platform release workflow, checksums, and GitHub Release.
+- [x] Validate the public raw installer with an isolated Windows install root and verify `VERSION` plus `yt2 help`.
+
+## Release review
+
+- Commit `cc8c162` (`feat(cli): ship standalone score pipeline`) is pushed to `main`; package version is `0.2.12`.
+- Annotated tag `cli-v0.2.12` is pushed and peels to `cc8c162a3849e709758b65da6671a841c203a96b`.
+- Release workflow `30698094726` completed successfully for Windows x64, macOS Intel, macOS ARM64, and Linux x64, then published the GitHub Release.
+- Release assets include all four archives plus `checksums.txt`; the downloaded checksum manifest matches the uploaded archive asset names and SHA-256 values.
+- Public installer verification: raw `cli-v0.2.12` installer downloaded and verified the Windows bundle in an isolated temp root. `VERSION` reports `yt2sheet 0.2.12 windows-x64`, and `yt2 help` exited successfully.
+- Workflow annotations only report the GitHub Actions Node.js 20 deprecation warning; all jobs and the publish step succeeded.
+
 ## Release / installation
 
 - [x] Bump the CLI patch version, commit the crop-analysis fix and regression, and push `main`.
