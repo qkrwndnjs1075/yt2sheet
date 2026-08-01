@@ -11,6 +11,8 @@ const NOTATION_IDENTITY_WIDTH = 96;
 const NOTATION_IDENTITY_HEIGHT = 48;
 const NOTATION_INK_THRESHOLD = 180;
 const STAFF_ROW_INK_RATIO = 0.45;
+const TRACKER_MIN_HEIGHT_RATIO = 0.8;
+const TRACKER_MAX_WIDTH_RATIO = 0.02;
 const MAX_NOTATION_TRANSLATION = 2;
 const MIN_NOTATION_OVERLAP = 0.6;
 
@@ -74,6 +76,7 @@ export async function createDominantInkHash(image: Buffer): Promise<Uint8Array> 
 export async function createNotationIdentity(image: Buffer): Promise<NotationIdentity> {
   const raw = await sharp(image).greyscale().raw().toBuffer({ resolveWithObject: true });
   const staffRows = findStaffRows(raw.data, raw.info.width, raw.info.height);
+  const trackerColumns = findTrackerColumns(raw.data, raw.info.width, raw.info.height);
   const pixels = new Uint8Array(NOTATION_IDENTITY_WIDTH * NOTATION_IDENTITY_HEIGHT);
 
   for (let targetY = 0; targetY < NOTATION_IDENTITY_HEIGHT; targetY += 1) {
@@ -85,6 +88,7 @@ export async function createNotationIdentity(image: Buffer): Promise<NotationIde
       for (let y = top; y < bottom && pixels[targetY * NOTATION_IDENTITY_WIDTH + targetX] === 0; y += 1) {
         if (staffRows[y] === 1) continue;
         for (let x = left; x < right; x += 1) {
+          if (trackerColumns[x] === 1) continue;
           if (raw.data[y * raw.info.width + x] < NOTATION_INK_THRESHOLD) {
             pixels[targetY * NOTATION_IDENTITY_WIDTH + targetX] = 1;
             break;
@@ -217,6 +221,33 @@ function findStaffRows(data: Buffer, width: number, height: number): Uint8Array 
     rows[Math.min(height - 1, y + 1)] = 1;
   }
   return rows;
+}
+
+function findTrackerColumns(data: Buffer, width: number, height: number): Uint8Array {
+  const columns = new Uint8Array(width);
+  const maximumWidth = Math.max(2, Math.floor(width * TRACKER_MAX_WIDTH_RATIO));
+  for (let start = 0; start < width;) {
+    let darkPixels = 0;
+    for (let y = 0; y < height; y += 1) {
+      if (data[y * width + start] < NOTATION_INK_THRESHOLD) darkPixels += 1;
+    }
+    if (darkPixels / height < TRACKER_MIN_HEIGHT_RATIO) {
+      start += 1;
+      continue;
+    }
+    let end = start + 1;
+    while (end < width) {
+      let adjacentDarkPixels = 0;
+      for (let y = 0; y < height; y += 1) {
+        if (data[y * width + end] < NOTATION_INK_THRESHOLD) adjacentDarkPixels += 1;
+      }
+      if (adjacentDarkPixels / height < TRACKER_MIN_HEIGHT_RATIO) break;
+      end += 1;
+    }
+    if (end - start <= maximumWidth) columns.fill(1, start, end);
+    start = end;
+  }
+  return columns;
 }
 
 function findVerticalInkBounds(

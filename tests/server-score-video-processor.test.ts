@@ -251,6 +251,48 @@ describe("score video processor", () => {
     });
   });
 
+  it("deduplicates identical notation when an opaque thin tracker line moves", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-opaque-tracker-");
+    const first = join(directory, "frame-1.png");
+    const second = join(directory, "frame-2.png");
+    const tracker = { width: 4, color: "rgb(255, 0, 0)", opacity: 1 };
+    await Promise.all([
+      writeScoreFrameWithPlaybackOverlay(first, 120, tracker),
+      writeScoreFrameWithPlaybackOverlay(second, 680, tracker)
+    ]);
+
+    let collectedReport: ScoreExtractionQualityReport | undefined;
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), {
+      ...pdfOptions(),
+      async qualityReportSink(report) {
+        collectedReport = report;
+      }
+    });
+
+    assert.equal(result.scoreCount, 1, "a moved tracker line exported the same score twice");
+    assert.ok(collectedReport);
+    assert.deepEqual(collectedReport.frames[1], {
+      frameId: "frame-000002",
+      disposition: "duplicate",
+      duplicateReason: "notation-identity"
+    });
+  });
+
+  it("keeps changed notation distinct when opaque thin tracker lines move", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-opaque-tracker-distinct-");
+    const first = join(directory, "frame-1.png");
+    const second = join(directory, "frame-2.png");
+    const tracker = { width: 4, color: "rgb(255, 0, 0)", opacity: 1 };
+    await Promise.all([
+      writeScoreFrameWithPlaybackOverlay(first, 120, tracker),
+      writeScoreFrameWithPlaybackOverlay(second, 680, { ...tracker, noteOffset: 120 })
+    ]);
+
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), pdfOptions());
+
+    assert.equal(result.scoreCount, 2, "tracker suppression merged distinct notation");
+  });
+
   it("removes a wide colored keyboard below the score", async (t) => {
     // Given: a paper-bright keyboard band that spans almost the full frame width.
     const directory = await createTempDirectory(t, "yt2sheet-keyboard-");
@@ -421,7 +463,11 @@ async function writeScoreFrameWithPadding(path: string, top: number, includeHead
   await sharp(svg).png().toFile(path);
 }
 
-async function writeScoreFrameWithPlaybackOverlay(path: string, overlayX: number): Promise<void> {
+async function writeScoreFrameWithPlaybackOverlay(
+  path: string,
+  overlayX: number,
+  overlay: { readonly width?: number; readonly color?: string; readonly opacity?: number; readonly noteOffset?: number } = {}
+): Promise<void> {
   const lines = [90, 102, 114, 126, 138, 210, 222, 234, 246, 258]
     .map((y) => `<line x1="40" y1="${y}" x2="920" y2="${y}" stroke="black" stroke-width="2"/>`)
     .join("");
@@ -430,9 +476,9 @@ async function writeScoreFrameWithPlaybackOverlay(path: string, overlayX: number
     ${lines}
     <ellipse cx="220" cy="120" rx="22" ry="14" fill="black"/>
     <line x1="240" y1="120" x2="240" y2="72" stroke="black" stroke-width="5"/>
-    <ellipse cx="610" cy="238" rx="22" ry="14" fill="black"/>
-    <line x1="630" y1="238" x2="630" y2="190" stroke="black" stroke-width="5"/>
-    <rect x="${overlayX}" y="0" width="32" height="360" fill="rgb(80, 0, 0)" fill-opacity="0.22"/>
+    <ellipse cx="${610 + (overlay.noteOffset ?? 0)}" cy="238" rx="22" ry="14" fill="black"/>
+    <line x1="${630 + (overlay.noteOffset ?? 0)}" y1="238" x2="${630 + (overlay.noteOffset ?? 0)}" y2="190" stroke="black" stroke-width="5"/>
+    <rect x="${overlayX}" y="0" width="${overlay.width ?? 32}" height="360" fill="${overlay.color ?? "rgb(80, 0, 0)"}" fill-opacity="${overlay.opacity ?? 0.22}"/>
   </svg>`);
   await sharp(svg).png().toFile(path);
 }
