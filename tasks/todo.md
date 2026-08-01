@@ -1683,3 +1683,18 @@
 - RED/GREEN evidence: the new unversioned/latest contract failed against the pinned implementation with no `releases/latest/download` path, then both focused installer tests passed after the change. `npm run verify` passed 314 tests with one Windows symlink-permission skip and built the CLI, standalone web app, and extension.
 - Pushed `140414a` (`fix(installer): resolve latest release dynamically`) and tagged `cli-v0.2.6`. Release workflow `30682385003` completed every platform build and published the release; all four archive digests match the public latest `checksums.txt`.
 - A profile-loaded Windows PowerShell process ran the literal unversioned `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex`, completed stages 1/7 through 7/7, selected `yt2sheet 0.2.6 windows-x64`, returned `yt2 help`, and removed the isolated root through `yt2 uninstall` while restoring the user PATH.
+
+# G074 Empty Windows architecture fallback (2026-08-01)
+
+## Plan
+
+- [x] Reproduce an empty `RuntimeInformation.OSArchitecture` with a Windows PowerShell regression.
+- [x] Resolve native architecture from WOW64/process environment values before the runtime fallback.
+- [x] Publish `cli-v0.2.7`, verify checksums, and prove the unchanged public command installs successfully.
+
+## Review
+
+- Root cause: the installer relied only on `RuntimeInformation.OSArchitecture`; the reported Windows PowerShell host converted it to an empty string and rejected the machine before download. The installer now resolves `PROCESSOR_ARCHITEW6432`, then `PROCESSOR_ARCHITECTURE`, then the runtime value, mapping both `AMD64` and `X64` to `windows-x64` while leaving unsupported architectures rejected.
+- RED/GREEN evidence: forcing the runtime expression to `""` produced no installer progress before the fix; after the native-environment fallback, all three focused raw-installer tests passed and the forced-empty case reached stage 1/7. Full `npm run verify` passed 315 of 316 tests with one Windows symlink-permission skip and built the CLI, standalone web app, and extension.
+- Pushed `5a4ecee` (`fix(installer): detect Windows architecture reliably`) and tagged `cli-v0.2.7`. Release workflow `30682830041` completed all four platform builds and the release job successfully; direct downloads of all four public archives matched the published latest `checksums.txt`.
+- A profile-loaded Windows PowerShell process ran the literal unversioned `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex`, completed stages 1/7 through 7/7, installed `yt2sheet 0.2.7 windows-x64`, returned `yt2 help`, and removed the isolated root through `yt2 uninstall` while restoring the user PATH.
