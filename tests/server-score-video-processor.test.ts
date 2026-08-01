@@ -278,6 +278,46 @@ describe("score video processor", () => {
     });
   });
 
+  it("deduplicates identical notation with a moving cyan marker and translucent score overlay", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-production-playback-signal-");
+    const first = join(directory, "frame-1.png");
+    const second = join(directory, "frame-2.png");
+    await Promise.all([
+      writeScoreFrameWithProductionPlaybackSignal(first, 120, 0),
+      writeScoreFrameWithProductionPlaybackSignal(second, 680, 1)
+    ]);
+
+    let collectedReport: ScoreExtractionQualityReport | undefined;
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), {
+      ...pdfOptions(),
+      async qualityReportSink(report) {
+        collectedReport = report;
+      }
+    });
+
+    assert.equal(result.scoreCount, 1, "production-style playback UI exported the same score twice");
+    assert.ok(collectedReport);
+    assert.deepEqual(collectedReport.frames[1], {
+      frameId: "frame-000002",
+      disposition: "duplicate",
+      duplicateReason: "notation-identity"
+    });
+  });
+
+  it("keeps changed notation distinct with a moving cyan marker and translucent score overlay", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-production-playback-signal-distinct-");
+    const first = join(directory, "frame-1.png");
+    const second = join(directory, "frame-2.png");
+    await Promise.all([
+      writeScoreFrameWithProductionPlaybackSignal(first, 120, 0),
+      writeScoreFrameWithProductionPlaybackSignal(second, 680, 1, 120)
+    ]);
+
+    const result = await createScorePdfFromFrames([first, second], directory, join(directory, "result.pdf"), pdfOptions());
+
+    assert.equal(result.scoreCount, 2, "playback-signal cleanup merged distinct notation");
+  });
+
   it("keeps changed notation distinct when opaque thin tracker lines move", async (t) => {
     const directory = await createTempDirectory(t, "yt2sheet-opaque-tracker-distinct-");
     const first = join(directory, "frame-1.png");
@@ -479,6 +519,29 @@ async function writeScoreFrameWithPlaybackOverlay(
     <ellipse cx="${610 + (overlay.noteOffset ?? 0)}" cy="238" rx="22" ry="14" fill="black"/>
     <line x1="${630 + (overlay.noteOffset ?? 0)}" y1="238" x2="${630 + (overlay.noteOffset ?? 0)}" y2="190" stroke="black" stroke-width="5"/>
     <rect x="${overlayX}" y="0" width="${overlay.width ?? 32}" height="360" fill="${overlay.color ?? "rgb(80, 0, 0)"}" fill-opacity="${overlay.opacity ?? 0.22}"/>
+  </svg>`);
+  await sharp(svg).png().toFile(path);
+}
+
+async function writeScoreFrameWithProductionPlaybackSignal(path: string, markerX: number, noisePhase: number, noteOffset = 0): Promise<void> {
+  const lines = [90, 102, 114, 126, 138, 210, 222, 234, 246, 258]
+    .map((y) => `<line x1="40" y1="${y}" x2="920" y2="${y}" stroke="black" stroke-width="2"/>`)
+    .join("");
+  const noise = Array.from({ length: 24 }, (_, index) => {
+    const x = 28 + ((index * 131 + noisePhase * 53) % 880);
+    const y = 28 + ((index * 47 + noisePhase * 71) % 286);
+    return `<rect x="${x}" y="${y}" width="28" height="5" fill="rgb(150, 145, 110)" fill-opacity="0.46"/>`;
+  }).join("");
+  const svg = Buffer.from(`<svg width="960" height="360" xmlns="http://www.w3.org/2000/svg">
+    <rect width="960" height="360" fill="white"/>
+    ${lines}
+    <ellipse cx="220" cy="120" rx="22" ry="14" fill="black"/>
+    <line x1="240" y1="120" x2="240" y2="72" stroke="black" stroke-width="5"/>
+    <ellipse cx="${610 + noteOffset}" cy="238" rx="22" ry="14" fill="black"/>
+    <line x1="${630 + noteOffset}" y1="238" x2="${630 + noteOffset}" y2="190" stroke="black" stroke-width="5"/>
+    <text x="150" y="195" fill="rgb(105, 105, 105)" fill-opacity="0.34" font-family="sans-serif" font-size="54">WALTZ IN A MINOR</text>
+    ${noise}
+    <polygon points="${markerX},76 ${markerX + 18},76 ${markerX + 9},93" fill="rgb(0, 160, 185)"/>
   </svg>`);
   await sharp(svg).png().toFile(path);
 }

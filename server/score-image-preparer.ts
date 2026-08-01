@@ -8,6 +8,7 @@ const PAPER_CHROMA_MAX = 12;
 const PAPER_COLUMN_MIN_RATIO = 0.55;
 const MAX_PAPER_GAP_RATIO = 0.05;
 const MIN_PAPER_RUN_RATIO = 0.5;
+const ANALYSIS_LIGHT_ARTIFACT_CHANNEL_MIN = 180;
 
 type RawImageInfo = {
   readonly width: number;
@@ -21,7 +22,16 @@ type HorizontalBounds = {
 };
 
 export async function createGrayscaleAnalysis(data: Buffer, info: RawImageInfo): Promise<Buffer> {
-  return sharp(data, { raw: info }).greyscale().raw().toBuffer();
+  const canonical = Buffer.from(data);
+  for (let index = 0; index < canonical.length; index += info.channels) {
+    if (Math.min(canonical[index], canonical[index + 1], canonical[index + 2]) < ANALYSIS_LIGHT_ARTIFACT_CHANNEL_MIN) {
+      continue;
+    }
+    canonical[index] = 255;
+    canonical[index + 1] = 255;
+    canonical[index + 2] = 255;
+  }
+  return sharp(canonical, { raw: info }).greyscale().raw().toBuffer();
 }
 
 export function prepareScoreCrop(data: Buffer, info: RawImageInfo, crop: ScoreCrop | null): ScoreCrop | null {

@@ -114,3 +114,7 @@
 # 2026-08-01 - Confirm the requested surface before routing frontend work
 
 - A repository can contain a web build while the requested feature targets the CLI. Confirm the user's product surface before loading frontend/UI skills; when the user says QA will be handled manually, do not run visual QA or browser screenshot reviews.
+
+# 2026-08-01 - Regress media deduplication against the reported artifact shape
+
+- Do not treat a passing synthetic full-height opaque tracker fixture as proof for a live score-video duplicate report. First inspect the supplied artifact and make the regression fixture match the real marker/overlay geometry; otherwise a released mask can be present yet never execute for the production signal.

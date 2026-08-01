@@ -1,3 +1,28 @@
+# Live PDF tracker-line regression (2026-08-01)
+
+## Plan
+
+- [x] Render and inspect the user-supplied `yt2sheet-algM0c_u99k.pdf` to identify the exact repeated score regions.
+- [x] Compare the produced artifact with the released CLI implementation and locate the unhandled tracker-line shape.
+- [x] Add a failing production-shaped deduplication regression with a short cyan marker and broad translucent watermark/noise.
+- [x] Stabilize score-crop analysis against bright overlay pixels before the identity hashes are generated.
+- [x] Run the focused red/green regression plus project automated validation; leave visual QA to the user.
+
+## Review
+
+- Confirmed: page 1 repeats the same `Waltz in A minor / B.150 / Allegretto` opening. The best matching repeat is 1330 rendered pixels apart and has 97.34% identical ink classification, so this is generated content rather than a PDF viewer overlap.
+- The PDF was created after the installed `cli-v0.2.10` runtime, which contains the released full-height tracker mask. It is not a stale binary.
+- Root cause: the actual signal has a small cyan position marker and broad faint watermark/noise. Before the fix, those bright artifacts changed score-crop detection, producing different normalized heights (960x118 versus 960x207) for the same notation; this then prevented duplicate matching.
+- Fix: `createGrayscaleAnalysis` now whitens pixels whose darkest channel is at least 180 before score-crop analysis. The final notation normalization and duplicate thresholds remain unchanged.
+- RED/GREEN: the new production-shaped identical-score test failed as two scores before the crop-analysis fix and passed as one score after it. Its paired changed-notation case remains two scores.
+- Validation: focused playback regression suite passed 4/4. `npm run typecheck`, full `npm test`, `npm run build:cli`, and `git diff --check` passed. Visual QA and live YouTube regeneration were intentionally not run by user request.
+
+## Release / installation
+
+- [ ] Bump the CLI patch version, commit the crop-analysis fix and regression, and push `main`.
+- [ ] Push annotated tag `cli-v0.2.11` and verify the four-platform release workflow and checksums.
+- [ ] Reinstall the published Windows bundle and verify the installed version and CLI help.
+
 # CLI v0.2.10 tracker-line release (2026-08-01)
 
 ## Plan
