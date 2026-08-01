@@ -1698,3 +1698,21 @@
 - RED/GREEN evidence: forcing the runtime expression to `""` produced no installer progress before the fix; after the native-environment fallback, all three focused raw-installer tests passed and the forced-empty case reached stage 1/7. Full `npm run verify` passed 315 of 316 tests with one Windows symlink-permission skip and built the CLI, standalone web app, and extension.
 - Pushed `5a4ecee` (`fix(installer): detect Windows architecture reliably`) and tagged `cli-v0.2.7`. Release workflow `30682830041` completed all four platform builds and the release job successfully; direct downloads of all four public archives matched the published latest `checksums.txt`.
 - A profile-loaded Windows PowerShell process ran the literal unversioned `irm https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.ps1 | iex`, completed stages 1/7 through 7/7, installed `yt2sheet 0.2.7 windows-x64`, returned `yt2 help`, and removed the isolated root through `yt2 uninstall` while restoring the user PATH.
+
+# G075 Windows URL forwarding and default PDF directory (2026-08-01)
+
+## Plan
+
+- [x] Reproduce the `&list`/`&start_radio` shell errors through the generated Windows launcher and lock the requested `yt2sheet` output directory with red tests.
+- [x] Forward each Windows launcher argument as a quoted token and default CLI output to a `yt2sheet` subdirectory.
+- [x] Run focused/full verification, rebuild the standalone bundle, and inspect the exact user command's PDF path.
+- [x] Publish `cli-v0.2.8`, verify checksums, and re-run the exact PowerShell command.
+
+## Review
+
+- Root cause: PowerShell passes `.cmd` arguments through `cmd.exe`, which split the `&list` and `&start_radio` query segments before the batch launcher could forward them. The bundle now installs `yt2.ps1` beside `yt2.cmd`; PowerShell selects the script and forwards the native `$args` array directly to bundled Node. The batch launcher also quotes shifted arguments for direct CMD use.
+- The default parser output is now `cwd/yt2sheet/yt2sheet-<videoId>.pdf`; explicit `--output` paths remain unchanged. Help and README text document the new folder.
+- RED/GREEN evidence: focused tests failed 2/2 before the fix (old default path and missing per-argument launcher forwarding), then passed 3/3 after the fix. Full `npm run verify` passed 316 of 317 tests with one Windows symlink-permission skip and zero failures.
+- Generated-bundle QA selected `yt2.ps1`, preserved an ampersand URL without `list`/`start_radio` shell errors, and removed the local bundle through `yt2 uninstall`.
+- Pushed `8d3681c` (`fix(cli): preserve Windows URLs and default output directory`) and tagged `cli-v0.2.8`. Release workflow `30683702870` succeeded; all four public archives matched `checksums.txt`.
+- A profile-loaded PowerShell process ran the literal unversioned installer command, installed `yt2sheet 0.2.8 windows-x64`, processed the exact user URL to a 4-page PDF at `...\yt2sheet\yt2sheet-7-l2e72RSmc.pdf`, and passed `yt2 uninstall` cleanup.

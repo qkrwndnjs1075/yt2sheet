@@ -106,3 +106,7 @@
 # 2026-08-01 - Do not trust one Windows architecture API
 
 - A local PowerShell 5.1 success does not prove `RuntimeInformation.OSArchitecture` is populated in every Windows host. For bootstrap compatibility, prefer the native WOW64/process architecture environment values, keep the runtime API as a fallback, and regression-test the exact empty-runtime case before releasing.
+
+# 2026-08-01 - Test generated Windows launcher argument boundaries
+
+- A quoted URL can still be split before a batch launcher receives it because PowerShell invokes `.cmd` through `cmd.exe`. Test the generated Windows launcher at both `cmd.exe` and PowerShell boundaries; use a native `.ps1` shim for PowerShell and forward each shifted batch argument inside explicit quotes. Keep the default output directory contract in the parser test and help text.
