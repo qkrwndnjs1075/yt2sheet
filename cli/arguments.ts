@@ -113,7 +113,10 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
 
   const videoId = parseYouTubeVideoId(videoUrl);
   if (!videoId) {
-    return { kind: "error", message: "올바른 YouTube 링크가 아닙니다." };
+    return {
+      kind: "error",
+      message: "올바른 YouTube 링크가 아닙니다. 터미널에서는 링크 전체를 큰따옴표로 감싸 주세요."
+    };
   }
 
   if (startTimeSec !== undefined && endTimeSec !== undefined && endTimeSec <= startTimeSec) {

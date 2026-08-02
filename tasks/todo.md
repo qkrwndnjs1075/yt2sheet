@@ -1935,3 +1935,35 @@
 ## Review
 
 - In progress.
+
+# G077 macOS YouTube URL rejection (2026-08-02)
+
+## Plan
+
+- [x] Map the current CLI/browser support boundary and reproduce URL parsing at both the parser and macOS shell boundaries.
+- [x] Add a failing regression for the confirmed valid YouTube URL shape or invocation boundary.
+- [x] Implement the smallest shared parser or usage-guidance fix without restoring removed browser surfaces.
+- [x] Run focused tests, typecheck, full verification, and a compiled CLI smoke scenario.
+- [x] Clean debugging artifacts and record the root cause, supported browsers, and verification evidence.
+
+## Review
+
+- Browser support: the current product is a local CLI with standalone Windows, macOS Intel/Apple Silicon, and Linux bundles. It has no Chrome API dependency.
+- Root cause: the shared parser omitted YouTube's `/live/<videoId>` route. Separately, macOS/POSIX shells split an unquoted URL at `&`, so a later `v=` parameter never reaches `yt2`.
+- Fix: `/live/` now uses the same exact 11-character ID validation as `/shorts/` and `/embed/`. Invalid-link output, `yt2 help`, and README now instruct every terminal user to wrap the entire URL in double quotes; README explicitly states that the CLI is browser-independent.
+- RED/GREEN: the focused pair initially failed 2/11 because `/live/` returned `null` and the error lacked quote guidance; after the fix it passed 11/11.
+- Full verification: `npm run verify` passed typecheck, CLI build, and 162 tests with 0 failures and 1 existing Windows symlink-permission skip. `git diff --check` and the changed-file forbidden-pattern audit passed. The optional no-excuse skill checker could not load its TypeScript 7 experimental API against this repository's TypeScript 5.7, so no dependency upgrade was made.
+- Compiled CLI QA: a quoted `/live/` URL reached the later time-range error instead of the invalid-URL branch, proving URL acceptance without starting media download. A malformed URL returned the new quote guidance and `yt2 --help` displayed the same terminal rule. No PDF or other runtime artifact was created.
+
+# G078 CLI v0.2.13 release (2026-08-02)
+
+## Plan
+
+- [ ] Bump package and lockfile metadata to `0.2.13` and retain the URL-parser regression/documentation fix.
+- [ ] Run release preflight verification and commit the coherent fix plus version bump on `main`.
+- [ ] Push `main`, create and push annotated tag `cli-v0.2.13`, and monitor the four-platform release workflow.
+- [ ] Verify published assets/checksums and the public installer/help smoke for the new release.
+
+## Review
+
+- In progress.

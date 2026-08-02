@@ -29,8 +29,8 @@ Examples:
   yt2 "<youtube-url>" --output ./scores/song.pdf
   yt2 help
 
-PowerShell:
-  If the URL contains &, wrap the entire URL in double quotes.
+Terminal:
+  Always wrap the entire URL in double quotes so ? and & reach yt2 unchanged.
 
 Time range:
   --start and --end are optional decimal seconds defining the half-open interval [start,end).

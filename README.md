@@ -36,7 +36,7 @@ yt2 "https://www.youtube.com/watch?v=VIDEO_ID"
 
 Without `--output`, the PDF is saved in a `yt2sheet` subfolder of the folder where you run the command.
 
-In PowerShell, wrap the entire URL in double quotes when it contains `&`; otherwise PowerShell treats `&` as an operator before `yt2` can receive the URL.
+This is a local CLI and does not depend on Chrome or another browser. In macOS Terminal, PowerShell, and other shells, wrap the entire URL in double quotes so `?` and `&` reach `yt2` unchanged.
 
 ### Time range
 

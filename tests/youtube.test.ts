@@ -15,6 +15,7 @@ test("parses supported YouTube video ids", () => {
   assert.equal(parseYouTubeVideoId("http://www.youtube.com/watch?v=abc123XYZ_0"), "abc123XYZ_0");
   assert.equal(parseYouTubeVideoId("https://youtu.be/abc123XYZ_0"), "abc123XYZ_0");
   assert.equal(parseYouTubeVideoId("https://www.youtube.com/shorts/abc123XYZ_0"), "abc123XYZ_0");
+  assert.equal(parseYouTubeVideoId("https://www.youtube.com/live/abc123XYZ_0?si=share-token"), "abc123XYZ_0");
   assert.equal(parseYouTubeVideoId("https://www.youtube.com/embed/abc123XYZ_0"), "abc123XYZ_0");
   assert.equal(parseYouTubeVideoId("not a url"), null);
 });

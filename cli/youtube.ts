@@ -25,7 +25,9 @@ export function parseYouTubeVideoId(url: string): string | null {
     return cleanVideoId(parsed.searchParams.get("v"));
   }
 
-  if (parsed.pathname.startsWith("/shorts/") || parsed.pathname.startsWith("/embed/")) {
+  if (parsed.pathname.startsWith("/shorts/")
+    || parsed.pathname.startsWith("/embed/")
+    || parsed.pathname.startsWith("/live/")) {
     return cleanVideoId(parsed.pathname.split("/")[2]);
   }
 

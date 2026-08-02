@@ -158,7 +158,10 @@ test("recognizes the standalone uninstall command without accepting extra argume
 });
 
 test("rejects invalid or incomplete arguments", () => {
-  assert.equal(parseCliArguments(["not-a-youtube-url"], "C:/work").kind, "error");
+  assert.deepEqual(parseCliArguments(["not-a-youtube-url"], "C:/work"), {
+    kind: "error",
+    message: "올바른 YouTube 링크가 아닙니다. 터미널에서는 링크 전체를 큰따옴표로 감싸 주세요."
+  });
   assert.equal(parseCliArguments(["--output"], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["https://youtu.be/1yCkz9VT3ZA", "extra"], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["--unknown", "value"], "C:/work").kind, "error");

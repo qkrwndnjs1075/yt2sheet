@@ -1,6 +1,6 @@
 {
   "name": "yt2sheet",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Generate sheet-music PDFs from YouTube videos locally.",
   "type": "module",
   "bin": {
