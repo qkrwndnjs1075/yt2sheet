@@ -1959,11 +1959,17 @@
 
 ## Plan
 
-- [ ] Bump package and lockfile metadata to `0.2.13` and retain the URL-parser regression/documentation fix.
-- [ ] Run release preflight verification and commit the coherent fix plus version bump on `main`.
-- [ ] Push `main`, create and push annotated tag `cli-v0.2.13`, and monitor the four-platform release workflow.
-- [ ] Verify published assets/checksums and the public installer/help smoke for the new release.
+- [x] Bump package and lockfile metadata to `0.2.13` and retain the URL-parser regression/documentation fix.
+- [x] Run release preflight verification and commit the coherent fix plus version bump on `main`.
+- [x] Push `main`, create and push annotated tag `cli-v0.2.13`, and monitor the four-platform release workflow.
+- [x] Verify published assets/checksums and the public installer/help smoke for the new release.
 
 ## Review
 
-- In progress.
+- Commit `fef81e3` (`fix(cli): accept YouTube live URL links`) bumps package/lockfile metadata to `0.2.13`, accepts `/live/<videoId>`, adds terminal quoting guidance, and includes the regression tests.
+- `main` and annotated tag `cli-v0.2.13` are pushed; the tag resolves to `fef81e3b19b95c03e87b259de9775799b31ed55c`.
+- Preflight: `npm run verify` passed 162 tests with 0 failures and 1 existing Windows symlink-permission skip; `npm pack --dry-run` reports `yt2sheet@0.2.13` and `git diff --check` passed.
+- Release workflow `30741492735` completed all four platform builds and GitHub Release publication. The public release is [cli-v0.2.13](https://github.com/qkrwndnjs1075/yt2sheet/releases/tag/cli-v0.2.13), with Windows x64, macOS Intel, macOS Apple Silicon, Linux x64, and `checksums.txt`.
+- Public checksums match: macOS ARM64 `38a0fa2c66e0f9bda76f625b2eeba297073c7e78b1e2b37bb82ae1adf037fcc4`, macOS Intel `8ce3a8d8085877a42b85c1fd0f90d0775c343a535da1c0436748954737a1ce6f`, Linux `5f21f09d6c33b89244d02bac4c083899d7e668c772d2e552761df9f287c41fdb`, Windows `26ba5889102d0ab6c463d80a6bf9365c7cb8df94d347cbcf0fcfa0cfd5ab4b40`.
+- The public raw PowerShell installer was run with `cli-v0.2.13` into an isolated temp root. It completed stages 1/7 through 7/7, reported `yt2sheet 0.2.13 windows-x64`, and the installed `yt2 help` exited 0. The user PATH was restored and the temp root removed.
+- GitHub Actions annotations only report the existing Node.js 20 deprecation notice; all jobs passed.
