@@ -180,6 +180,12 @@ test("returns help for conventional help entry points", () => {
   assert.deepEqual(parseCliArguments(["-h"], "C:/work"), { kind: "help" });
 });
 
+test("returns version for conventional version entry points", () => {
+  assert.deepEqual(parseCliArguments(["version"], "C:/work"), { kind: "version" });
+  assert.deepEqual(parseCliArguments(["--version"], "C:/work"), { kind: "version" });
+  assert.deepEqual(parseCliArguments(["-v"], "C:/work"), { kind: "version" });
+});
+
 test("recognizes the standalone uninstall command without accepting extra arguments", () => {
   assert.deepEqual(parseCliArguments(["uninstall"], "C:/work"), { kind: "uninstall" });
   assert.deepEqual(parseCliArguments(["uninstall", "extra"], "C:/work"), {

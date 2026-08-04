@@ -26,6 +26,16 @@ Open Terminal, then run:
 curl -fsSL https://raw.githubusercontent.com/qkrwndnjs1075/yt2sheet/main/scripts/install.sh | sh
 ```
 
+## Check the version
+
+Print the installed yt2sheet version with any of these equivalent commands:
+
+```sh
+yt2 version
+yt2 --version
+yt2 -v
+```
+
 ## Create a PDF
 
 Open a new terminal after installation and run:

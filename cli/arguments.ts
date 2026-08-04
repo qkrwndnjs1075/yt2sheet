@@ -27,6 +27,7 @@ export type CliParseResult =
   | { readonly kind: "ok"; readonly command: CliRunCommand }
   | { readonly kind: "doctor"; readonly command: CliDoctorCommand }
   | { readonly kind: "help" }
+  | { readonly kind: "version" }
   | { readonly kind: "uninstall" }
   | { readonly kind: "error"; readonly message: string };
 
@@ -38,6 +39,12 @@ const TIME_RANGE_VALUE_MESSAGE = "decimal seconds, MM:SS(.fraction), or H:MM:SS"
 export function parseCliArguments(args: readonly string[], cwd = process.cwd()): CliParseResult {
   if (args.length === 0 || args[0]?.trim() === "help") {
     return { kind: "help" };
+  }
+
+  if (["version", "--version", "-v"].includes(args[0]?.trim() ?? "")) {
+    return args.length === 1
+      ? { kind: "version" }
+      : { kind: "error", message: "version 명령은 추가 인자를 받지 않습니다." };
   }
 
   if (args[0]?.trim() === "uninstall") {

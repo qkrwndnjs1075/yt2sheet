@@ -2091,3 +2091,19 @@
 - Human output uses PASS/WARN/FAIL/SKIP markers and exits `1` only for critical failures. Progress stages go to stderr; the final report goes to stdout.
 - Focused CLI/doctor tests passed 14/14; `npm run typecheck`, `npm run build:cli`, `npm run build:bundle`, and `git diff --check` passed. Configured-tool manual QA passed local media/PDF smoke and YouTube metadata (`1yCkz9VT3ZA`, 4:02); the current unconfigured checkout correctly exits `1` because bundled ffmpeg is missing and ffprobe is not executable.
 - The full `npm test` suite remains non-green on pre-existing benchmark corpus-root assumptions, macOS process-tree timing, missing bundled ffmpeg, and Windows-path assertions; new doctor tests pass.
+
+# G085 CLI version command (2026-08-04)
+
+## Plan
+
+- [x] Add a failing parser test for `yt2 version`, `yt2 --version`, and `yt2 -v`.
+- [x] Route each version entry point to the package version and document it in CLI help and README.
+- [x] Run focused tests, typecheck, CLI build, and compiled-command smoke checks.
+
+## Review
+
+- RED/GREEN: the new parser test initially received the normal invalid-URL error, then passed for all three entry points.
+- `yt2 version`, `yt2 --version`, and `yt2 -v` now print the same package-derived `yt2sheet 0.2.15` line and exit without starting the PDF pipeline.
+- The CLI build writes the package name and version into `dist-cli/package.json`, so the npm CLI and copied standalone bundle read the release version from their own distribution metadata.
+- README and `yt2 --help` document all three forms. `npm run typecheck`, the focused parser test, `npm run build:cli`, compiled command smoke checks, and `git diff --check` passed.
+- The full `npm test` run still has pre-existing benchmark corpus assumptions, macOS process-tree timing, missing local `ffmpeg-static` binary, and Windows-path expectation failures; the new version test passes.

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import packageMetadata from "../package.json";
 import { ScorePipelineError } from "../pipeline/job-contract";
 import { formatResolvedScoreTimeRange } from "../pipeline/score-time-range";
 import { parseCliArguments } from "./arguments";
@@ -14,9 +15,11 @@ Usage:
   yt2 <youtube-url> [options]
   yt2 help
   yt2 --help
+  yt2 version
 
 Commands:
   help                  Show this help message
+  version               Show the installed yt2sheet version
   doctor [youtube-url]  Diagnose the local install and optional YouTube source
   uninstall             Remove this standalone installation
 
@@ -26,12 +29,14 @@ Options:
       --start <time>    Start time: seconds, MM:SS(.fraction), or H:MM:SS
       --end <time>      End time: seconds, MM:SS(.fraction), or H:MM:SS
   -h, --help            Show this help message
+  -v, --version         Show the installed yt2sheet version
 
 Examples:
   yt2 "<youtube-url>"
   yt2 "<youtube-url>" --output ./scores/song.pdf
   yt2 doctor
   yt2 doctor "<youtube-url>" --offline
+  yt2 version
   yt2 help
 
 Terminal:
@@ -67,6 +72,10 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   const parsed = parseCliArguments(args);
   if (parsed.kind === "help") {
     process.stdout.write(usage);
+    return;
+  }
+  if (parsed.kind === "version") {
+    process.stdout.write(`${packageMetadata.name} ${packageMetadata.version}\n`);
     return;
   }
   if (parsed.kind === "error") {
