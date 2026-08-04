@@ -19,12 +19,15 @@ type ProcessingPhase = {
 };
 
 const PROCESSING_PHASES: readonly ProcessingPhase[] = [
-  { index: 1, label: "영상 정보 확인", start: 0 },
-  { index: 2, label: "영상 다운로드", start: 12 },
-  { index: 3, label: "프레임 추출", start: 32 },
-  { index: 4, label: "악보 프레임 분석", start: 45 },
-  { index: 5, label: "중복 악보 정리", start: 75 },
-  { index: 6, label: "PDF 생성", start: 88 }
+  { index: 1, label: "info", start: 0 },
+  { index: 2, label: "download", start: 12 },
+  { index: 3, label: "extraction", start: 32 },
+  { index: 4, label: "raster analysis", start: 45 },
+  { index: 5, label: "raster review", start: 75 },
+  { index: 6, label: "OMR", start: 80 },
+  { index: 7, label: "MusicXML validation", start: 85 },
+  { index: 8, label: "engraving", start: 90 },
+  { index: 9, label: "PDF publication", start: 98 }
 ];
 
 const TOTAL_PROCESSING_PHASES = PROCESSING_PHASES.length;
@@ -49,6 +52,13 @@ export function createCliProgressReporter(output: CliProgressOutput): CliProgres
         return;
       }
 
+      const firstUnreportedPhase = (lastPhaseIndex ?? 0) + 1;
+      for (let index = firstUnreportedPhase; index < phase.index; index += 1) {
+        const intermediate = PROCESSING_PHASES[index - 1];
+        if (intermediate === undefined) continue;
+        const line = formatCliProgress(intermediate.start);
+        output.write(interactive ? `${TERMINAL_CLEAR_LINE}${line}` : `${line}\n`);
+      }
       const line = formatCliProgress(normalized);
       output.write(interactive ? `${TERMINAL_CLEAR_LINE}${line}` : `${line}\n`);
       lastPhaseIndex = phase.index;

@@ -11,7 +11,7 @@ import { BenchmarkRunError, canonicalJson } from "../benchmarks/runner";
 
 const FIXTURE_ROOT = resolve("tests/fixtures/score-corpus/v1");
 const PLAN_PATH = resolve("benchmarks/plans/score-pipeline-v1.json");
-const STABLE_FILES = ["run.json", "rights-audit.json", "cases.jsonl", "summary.json", "failures.jsonl", "evidence.jsonl"] as const;
+const STABLE_FILES = ["run.json", "rights-audit.json", "failures.jsonl"] as const;
 const splitSchema = z.union([z.literal("smoke"), z.literal("calibration"), z.literal("test")]);
 const runRecordSchema = z.object({
   claimTier: z.union([z.literal("mechanics-only"), z.literal("external-gated")]),
@@ -30,7 +30,7 @@ const caseRecordSchema = z.object({
   classTags: z.array(z.string().min(1)),
 }).passthrough();
 const failureRecordSchema = z.object({
-  code: z.union([z.literal("EXTERNAL_INELIGIBLE"), z.literal("PROMOTION_GATE_FAILED")]),
+  code: z.union([z.literal("EXTERNAL_INELIGIBLE"), z.literal("PROMOTION_GATE_FAILED"), z.literal("CASE_EXECUTION_FAILED")]),
   message: z.string().min(1),
 }).passthrough();
 const evidenceRecordSchema = z.object({
@@ -46,7 +46,14 @@ const evidenceRecordSchema = z.object({
     timestampsMs: z.array(z.number().int().nonnegative()),
     candidateCount: z.number().int().nonnegative(),
   }),
-  pipelineExecution: z.literal("not-run"),
+  pipelineExecution: z.union([z.literal("completed"), z.literal("failed")]),
+  artifact: z.object({ relativePath: z.string(), sha256: z.string().regex(/^[0-9a-f]{64}$/), pageCount: z.number().int().nonnegative().nullable() }).strict(),
+  execution: z.object({
+    disposition: z.union([z.literal("blocked"), z.literal("structured"), z.literal("raster-fallback")]).nullable(),
+    runtimeMs: z.number().positive(), outputBytes: z.number().nonnegative().nullable(),
+    budget: z.object({ runtimeMs: z.number().positive(), outputBytes: z.number().nonnegative(), maxRuntimeMs: z.number().positive(), maxPages: z.number().positive(), maxOutputBytes: z.number().positive(), withinBudget: z.boolean() }).strict(),
+    errorCode: z.string().optional()
+  }).strict().optional(),
 }).strict();
 
 test("returns the strict usage error when the benchmark CLI receives an unknown option", () => {
@@ -127,23 +134,26 @@ test("writes byte-identical stable mechanics artifacts under two output roots", 
     assert.doesNotMatch(await readFile(resolve("pipeline", path), "utf8"), /(?:from|import\s*)\s*["'][^"']*benchmark(?:\/|["'])/);
   }
   assert.doesNotMatch(runText, /[A-Z]:\\/i);
-  assert.match(casesText, /"runtimeMs":0/);
+  const caseExecutionRecords = casesText.split(/\r?\n/).filter((line) => line.length > 0).map((line) => JSON.parse(line) as {
+    readonly execution?: { readonly runtimeMs?: unknown };
+  });
+  assert.ok(caseExecutionRecords.every((record) => typeof record.execution?.runtimeMs === "number" && record.execution.runtimeMs > 0));
   assert.equal(evidenceRecords.length, assetIds.length * 2);
   assert.deepEqual(evidenceRecords.map((record) => `${record.assetId}:${record.variant}`), assetIds.flatMap((assetId) =>
     [`${assetId}:control`, `${assetId}:treatment`]));
   for (const record of evidenceRecords) {
     assert.equal(record.runDigest, firstDirectory.digest);
-    assert.equal(record.pipelineExecution, "not-run");
+    assert.equal(record.pipelineExecution, "completed");
     assert.equal(record.sampling.candidateCount, record.sampling.timestampsMs.length);
     assert.ok(record.sampling.timestampsMs.every((timestampMs, index, timestampsMs) => {
       const previousTimestampMs = timestampsMs[index - 1];
       return previousTimestampMs === undefined || previousTimestampMs <= timestampMs;
     }));
   }
-  const sourceHashes = [...runText.matchAll(/"assetId":"(?:external-owned|synthetic-score)","sha256":"([0-9a-f]{64})"/g)].map((match) => match[1]);
+  const sourceHashes = (JSON.parse(runText).sourceHashes as readonly { readonly sha256: string }[]).map(({ sha256 }) => sha256);
   assert.equal(new Set(sourceHashes).size, 2);
   const emittedNames = await readdir(firstDirectory.path);
-  assert.deepEqual(emittedNames.sort(), [...STABLE_FILES, "run-volatile.json"].sort());
+  assert.deepEqual(emittedNames.sort(), [...STABLE_FILES, "cases.jsonl", "summary.json", "evidence.jsonl", "cases", "run-volatile.json"].sort());
 });
 
 test("refuses a same-digest overwrite before changing an artifact", async (t) => {
@@ -306,10 +316,18 @@ async function digestDirectory(outputRoot: string): Promise<{ readonly digest: s
 }
 
 async function artifactInventory(path: string) {
-  const names = (await readdir(path)).sort();
-  return Promise.all(names.map(async (name) => {
-    const file = join(path, name);
+  const files: string[] = [];
+  async function collect(root: string): Promise<void> {
+    for (const name of await readdir(root)) {
+      const file = join(root, name);
+      const metadata = await stat(file);
+      if (metadata.isDirectory()) await collect(file);
+      else files.push(file);
+    }
+  }
+  await collect(path);
+  return Promise.all(files.sort().map(async (file) => {
     const metadata = await stat(file);
-    return { name, mtimeMs: metadata.mtimeMs, bytes: await readFile(file) };
+    return { name: file.slice(path.length + 1), mtimeMs: metadata.mtimeMs, bytes: await readFile(file) };
   }));
 }

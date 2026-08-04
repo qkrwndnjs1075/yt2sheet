@@ -1,0 +1,51 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.7.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.7",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:npm/yt2sheet@0.2.18",
+      "name": "yt2sheet",
+      "version": "0.2.18",
+      "purl": "pkg:npm/yt2sheet@0.2.18"
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "pkg:generic/audiveris@5.11.0",
+      "name": "Audiveris",
+      "version": "5.11.0",
+      "purl": "pkg:generic/audiveris@5.11.0",
+      "licenses": [{ "license": { "id": "AGPL-3.0-only" } }],
+      "externalReferences": [{ "type": "vcs", "url": "https://github.com/Audiveris/audiveris/tree/9e1e55cd2746037d059345881c53e6a6754bffbd" }]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:generic/musescore@4.7.4",
+      "name": "MuseScore",
+      "version": "4.7.4",
+      "purl": "pkg:generic/musescore@4.7.4",
+      "licenses": [{ "license": { "id": "GPL-3.0-only" } }],
+      "externalReferences": [{ "type": "vcs", "url": "https://github.com/musescore/MuseScore/tree/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8" }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/bravura@4.7.4%2Bbundled",
+      "name": "Bravura",
+      "version": "4.7.4+bundled",
+      "purl": "pkg:generic/bravura@4.7.4%2Bbundled",
+      "licenses": [{ "license": { "id": "OFL-1.1" } }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/leland@4.7.4%2Bbundled",
+      "name": "Leland",
+      "version": "4.7.4+bundled",
+      "purl": "pkg:generic/leland@4.7.4%2Bbundled",
+      "licenses": [{ "license": { "id": "OFL-1.1" } }]
+    }
+  ]
+}

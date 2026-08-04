@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "yt2sheet-source-manifest/1",
+  "packageKind": "npm-bootstrap",
+  "sources": [
+    {
+      "name": "Audiveris",
+      "version": "5.11.0",
+      "repositoryUrl": "https://github.com/Audiveris/audiveris",
+      "commit": "9e1e55cd2746037d059345881c53e6a6754bffbd",
+      "archiveUrl": "https://github.com/Audiveris/audiveris/archive/9e1e55cd2746037d059345881c53e6a6754bffbd.tar.gz",
+      "licenseUrl": "https://raw.githubusercontent.com/Audiveris/audiveris/9e1e55cd2746037d059345881c53e6a6754bffbd/LICENSE",
+      "runtimeArchiveIncluded": false
+    },
+    {
+      "name": "MuseScore",
+      "version": "4.7.4",
+      "repositoryUrl": "https://github.com/musescore/MuseScore",
+      "commit": "7688c005ad963ba09ee715aae53dbc7e8c9d5ef8",
+      "archiveUrl": "https://github.com/musescore/MuseScore/archive/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8.tar.gz",
+      "licenseUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/LICENSE.txt",
+      "runtimeArchiveIncluded": false
+    }
+  ],
+  "directPackages": []
+}

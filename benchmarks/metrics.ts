@@ -35,11 +35,20 @@ export type BenchmarkGroupEligibility = {
   readonly classTags: readonly string[];
 };
 
-type PromotionInput = {
+export type PromotionInput = {
   readonly claimTier: "mechanics-only" | "external-gated";
   readonly groups: readonly BenchmarkGroupEligibility[];
   readonly calibrationTunedDuringRun: boolean;
   readonly everyCaseWithinBudget: boolean;
+  readonly rightsAndHashesValid?: boolean;
+  readonly sourceGroupsIsolated?: boolean;
+  readonly allCasesExecuted?: boolean;
+  readonly artifactsComplete?: boolean;
+  readonly oracleMatches?: boolean;
+  readonly structuredPrecision?: number | null;
+  readonly fallbackRecall?: number | null;
+  readonly falseHardBlocks?: number | null;
+  readonly finalPageValidation?: number | null;
   readonly bootstrap: {
     readonly stateRecall: BootstrapInterval;
     readonly boundaryRecall: BootstrapInterval;
@@ -47,13 +56,20 @@ type PromotionInput = {
   };
 };
 
-type PromotionResult = {
+export type PromotionResult = {
   readonly exitCode: 0 | 4;
   readonly eligible: boolean;
   readonly promotionPassed: boolean;
   readonly qualityClaimsAllowed: boolean;
   readonly gateFailures: readonly string[];
 };
+
+export function computeStructuredPrecision(correct: number, predicted: number): number | null {
+  if (!Number.isInteger(correct) || !Number.isInteger(predicted) || correct < 0 || predicted < 0 || correct > predicted) {
+    throw new RangeError("Structured precision counts must be ordered nonnegative integers.");
+  }
+  return predicted === 0 ? null : correct / predicted;
+}
 
 export function computeUniqueStateRecall(timestampsMs: readonly number[], states: readonly BenchmarkState[]): RecallMetric {
   const numerator = states.filter((state) => timestampsMs.some((timestamp) => timestamp >= state.startMs && timestamp < state.endMs)).length;
@@ -174,6 +190,16 @@ export function evaluatePromotion(input: PromotionInput): PromotionResult {
   }
   const eligible = isEligible(input.groups, input.calibrationTunedDuringRun);
   const gateFailures: string[] = [];
+  if (input.rightsAndHashesValid === false) gateFailures.push("rights-hash-integrity");
+  if (input.sourceGroupsIsolated === false) gateFailures.push("source-group-isolation");
+  if (input.allCasesExecuted === false) gateFailures.push("all-cases-executed");
+  if (input.artifactsComplete === false) gateFailures.push("artifact-integrity");
+  if (input.oracleMatches === false) gateFailures.push("oracle-exactness");
+  if (input.structuredPrecision !== undefined && input.structuredPrecision !== 1) gateFailures.push("structured-precision");
+  if (input.fallbackRecall !== undefined && input.fallbackRecall !== 1) gateFailures.push("fallback-recall");
+  if (input.falseHardBlocks !== undefined && input.falseHardBlocks !== 0) gateFailures.push("false-hard-blocks");
+  if (input.finalPageValidation !== undefined && input.finalPageValidation !== 1) gateFailures.push("final-page-validation");
+  if (input.calibrationTunedDuringRun) gateFailures.push("calibration-frozen");
   if (input.bootstrap.stateRecall.lower95 === null || input.bootstrap.stateRecall.lower95 < 0) gateFailures.push("state-recall-lower95");
   if (input.bootstrap.boundaryRecall.lower95 === null || input.bootstrap.boundaryRecall.lower95 < 0) gateFailures.push("boundary-recall-lower95");
   if (input.bootstrap.candidateDelta.upper95 === null || input.bootstrap.candidateDelta.upper95 > 0) gateFailures.push("candidate-delta-upper95");

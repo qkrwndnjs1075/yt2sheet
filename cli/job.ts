@@ -1,12 +1,14 @@
-import { constants } from "node:fs";
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { assertMediaTools, defaultMediaTools, type MediaTools } from "../pipeline/media-tools";
 import {
+  ScorePipelineError,
   type ScoreJobProcessor,
   type ScoreJobProcessorContext
 } from "../pipeline/job-contract";
+import type { ScoreReviewDecision } from "../pipeline/score-review-contract";
 import type { ResolvedScoreTimeRange, ScoreTimeRange } from "../pipeline/score-time-range";
 import { resolveCliMediaTools } from "./media-tools";
 import type { YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
@@ -24,6 +26,7 @@ export type CliJobOptions = {
   readonly onInstallProgress?: YtDlpBootstrapProgressHandler;
   readonly tools?: MediaTools;
   readonly toolValidator?: (tools: MediaTools) => Promise<void>;
+  readonly publication?: CliPublicationDependencies;
   readonly processorFactory?: (options: {
     readonly dataRoot: string;
     readonly tools: MediaTools;
@@ -33,6 +36,18 @@ export type CliJobOptions = {
 export type CliJobResult = {
   readonly outputPath: string;
   readonly pageCount: number;
+  readonly reviewOutcome?: "structured" | "raster-fallback";
+  readonly warnings?: readonly ScoreReviewDecision[];
+};
+
+export type CliPublicationDependencies = {
+  readonly rename?: (sourcePath: string, destinationPath: string) => Promise<void>;
+};
+
+export type PublishFinalPdfOptions = {
+  readonly overwrite: boolean;
+  readonly signal?: AbortSignal;
+  readonly dependencies?: CliPublicationDependencies;
 };
 
 export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
@@ -55,39 +70,82 @@ export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
       createProcessorContext(options.signal, options.onProgress, options.onTimeRangeResolved)
     );
 
-    await mkdir(dirname(outputPath), { recursive: true });
-    const finalOutputPath = options.overwriteOutput === true
-      ? await copyReplacingOutput(result.filePath, outputPath)
-      : await copyWithoutReplacingOutput(result.filePath, outputPath);
-    return { outputPath: finalOutputPath, pageCount: result.pageCount };
+    throwIfCancelled(options.signal);
+    const finalOutputPath = await publishFinalPdf(result.filePath, outputPath, {
+      overwrite: options.overwriteOutput === true,
+      signal: options.signal,
+      dependencies: options.publication
+    });
+    return {
+      outputPath: finalOutputPath,
+      pageCount: result.pageCount,
+      ...(result.reviewOutcome === undefined ? {} : { reviewOutcome: result.reviewOutcome }),
+      ...(result.warnings === undefined ? {} : { warnings: result.warnings })
+    };
   } finally {
     await rm(dataRoot, { recursive: true, force: true });
   }
 }
 
-async function copyReplacingOutput(sourcePath: string, outputPath: string): Promise<string> {
-  await copyFile(sourcePath, outputPath);
-  return outputPath;
-}
-
-async function copyWithoutReplacingOutput(sourcePath: string, outputPath: string): Promise<string> {
+export async function publishFinalPdf(
+  sourcePath: string,
+  outputPath: string,
+  options: PublishFinalPdfOptions
+): Promise<string> {
+  await mkdir(dirname(outputPath), { recursive: true });
   const extension = extname(outputPath);
   const stem = basename(outputPath, extension);
   const directory = dirname(outputPath);
   for (let version = 1; ; version += 1) {
-    const candidate = version === 1 ? outputPath : join(directory, `${stem}-${version}${extension}`);
+    const candidate = options.overwrite || version === 1
+      ? outputPath
+      : join(directory, `${stem}-${version}${extension}`);
     try {
-      await copyFile(sourcePath, candidate, constants.COPYFILE_EXCL);
+      await publishToSibling(sourcePath, candidate, options);
       return candidate;
     } catch (error) {
-      if (isExistingDestination(error)) continue;
-      throw error;
+      if (!options.overwrite && isExistingDestination(error)) continue;
+      if (isAbortError(error)) throw error;
+      throw new ScorePipelineError("PUBLICATION_FAILED", "최종 PDF를 게시하지 못했습니다.", { cause: error });
     }
+  }
+}
+
+async function publishToSibling(sourcePath: string, destinationPath: string, options: PublishFinalPdfOptions): Promise<void> {
+  throwIfCancelled(options.signal);
+  const temporaryPath = join(dirname(destinationPath), `.${basename(destinationPath)}.${process.pid}-${randomUUID()}.tmp`);
+  let destinationReserved = false;
+  try {
+    const bytes = await readFile(sourcePath);
+    throwIfCancelled(options.signal);
+    const handle = await open(temporaryPath, "wx");
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    throwIfCancelled(options.signal);
+    if (!options.overwrite) {
+      const reservation = await open(destinationPath, "wx");
+      await reservation.close();
+      destinationReserved = true;
+    }
+    throwIfCancelled(options.signal);
+    await (options.dependencies?.rename ?? rename)(temporaryPath, destinationPath);
+    destinationReserved = false;
+  } finally {
+    await rm(temporaryPath, { force: true });
+    if (destinationReserved) await rm(destinationPath, { force: true });
   }
 }
 
 function isExistingDestination(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EEXIST";
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
 }
 
 async function createDefaultProcessor(dataRoot: string, tools: MediaTools): Promise<ScoreJobProcessor> {

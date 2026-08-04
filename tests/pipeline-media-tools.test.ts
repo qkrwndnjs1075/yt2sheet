@@ -77,6 +77,7 @@ it("terminates the complete process tree after cancellation", async (t) => {
   const childScript = join(directory, "child.mjs");
   const grandchildScript = join(directory, "grandchild.mjs");
   const pidFile = join(directory, "pids.json");
+  const reapedFile = join(directory, "grandchild-reaped.json");
   let pids: { readonly parent: number; readonly grandchild: number } | undefined;
   const signal = new AbortController();
 
@@ -86,17 +87,20 @@ it("terminates the complete process tree after cancellation", async (t) => {
     [
       'import { spawn } from "node:child_process";',
       'import { writeFileSync } from "node:fs";',
-      "const [grandchildScript, pidFile] = process.argv.slice(2);",
+      "const [grandchildScript, pidFile, reapedFile] = process.argv.slice(2);",
       "const grandchild = spawn(process.execPath, [grandchildScript], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });",
       "grandchild.unref();",
       "writeFileSync(pidFile, JSON.stringify({ parent: process.pid, grandchild: grandchild.pid }));",
+      "process.once('SIGTERM', () => {});",
+      "grandchild.once('exit', () => { writeFileSync(reapedFile, JSON.stringify({ grandchild: grandchild.pid })); process.exit(0); });",
       "setInterval(() => {}, 1000);"
     ].join("\n")
   );
 
   try {
     const pidReported = waitForFileChange(directory, pidFile);
-    const processResult = runProcess(process.execPath, [childScript, grandchildScript, pidFile], { signal: signal.signal });
+    const reapedReported = waitForFileChange(directory, reapedFile);
+    const processResult = runProcess(process.execPath, [childScript, grandchildScript, pidFile, reapedFile], { signal: signal.signal });
     await pidReported;
     const parsedPids = parseProcessIds(await readFile(pidFile, "utf8"));
     pids = parsedPids;
@@ -104,7 +108,9 @@ it("terminates the complete process tree after cancellation", async (t) => {
     signal.abort();
 
     await assert.rejects(processResult, { name: "AbortError" });
-    assert.equal(isProcessAlive(parsedPids.parent), false);
+    await reapedReported;
+    assert.deepEqual(JSON.parse(await readFile(reapedFile, "utf8")), { grandchild: parsedPids.grandchild });
+    await waitForProcessExit(parsedPids.parent);
     assert.equal(isProcessAlive(parsedPids.grandchild), false);
   } finally {
     if (pids) {
@@ -121,6 +127,7 @@ it("terminates the complete process tree after a timeout", async (t) => {
   const childScript = join(directory, "child.mjs");
   const grandchildScript = join(directory, "grandchild.mjs");
   const pidFile = join(directory, "pids.json");
+  const reapedFile = join(directory, "grandchild-reaped.json");
   let pids: { readonly parent: number; readonly grandchild: number } | undefined;
 
   await writeFile(grandchildScript, "setInterval(() => {}, 1000);\n");
@@ -129,23 +136,28 @@ it("terminates the complete process tree after a timeout", async (t) => {
     [
       'import { spawn } from "node:child_process";',
       'import { writeFileSync } from "node:fs";',
-      "const [grandchildScript, pidFile] = process.argv.slice(2);",
+      "const [grandchildScript, pidFile, reapedFile] = process.argv.slice(2);",
       "const grandchild = spawn(process.execPath, [grandchildScript], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });",
       "grandchild.unref();",
       "writeFileSync(pidFile, JSON.stringify({ parent: process.pid, grandchild: grandchild.pid }));",
+      "process.once('SIGTERM', () => {});",
+      "grandchild.once('exit', () => { writeFileSync(reapedFile, JSON.stringify({ grandchild: grandchild.pid })); process.exit(0); });",
       "setInterval(() => {}, 1000);"
     ].join("\n")
   );
 
   try {
+    const reapedReported = waitForFileChange(directory, reapedFile);
     await assert.rejects(
-      runProcess(process.execPath, [childScript, grandchildScript, pidFile], { timeoutMs: 1_000 }),
+      runProcess(process.execPath, [childScript, grandchildScript, pidFile, reapedFile], { timeoutMs: 1_000 }),
       /Process timed out/
     );
     const parsedPids = parseProcessIds(await readFile(pidFile, "utf8"));
     pids = parsedPids;
 
-    assert.equal(isProcessAlive(parsedPids.parent), false);
+    await reapedReported;
+    assert.deepEqual(JSON.parse(await readFile(reapedFile, "utf8")), { grandchild: parsedPids.grandchild });
+    await waitForProcessExit(parsedPids.parent);
     assert.equal(isProcessAlive(parsedPids.grandchild), false);
     assert.equal(
       await runProcess(process.execPath, ["-e", "process.stdout.write('next-ok')"], { timeoutMs: 5_000 }),
@@ -186,6 +198,12 @@ function isProcessAlive(pid: number): boolean {
     }
     throw error;
   }
+}
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (isProcessAlive(pid) && Date.now() < deadline) await new Promise<void>(setImmediate);
+  if (isProcessAlive(pid)) throw new Error(`Timed out waiting for process ${pid} to be reaped.`);
 }
 
 function terminateIfAlive(pid: number): void {

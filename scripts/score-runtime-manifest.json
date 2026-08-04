@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "score-runtime-manifest/1",
+  "releaseTargets": ["darwin-arm64", "darwin-x64", "linux-x64", "windows-x64"],
+  "tools": {
+    "audiveris": {
+      "version": "5.11.0",
+      "tag": "5.11.0",
+      "commit": "9e1e55cd2746037d059345881c53e6a6754bffbd",
+      "source": {
+        "repositoryUrl": "https://github.com/Audiveris/audiveris",
+        "commit": "9e1e55cd2746037d059345881c53e6a6754bffbd",
+        "archiveUrl": "https://github.com/Audiveris/audiveris/archive/9e1e55cd2746037d059345881c53e6a6754bffbd.tar.gz",
+        "bundledPath": "THIRD_PARTY/sources/audiveris-9e1e55cd2746037d059345881c53e6a6754bffbd.tar.gz"
+      },
+      "license": {
+        "spdx": "AGPL-3.0-only",
+        "sourceUrl": "https://raw.githubusercontent.com/Audiveris/audiveris/9e1e55cd2746037d059345881c53e6a6754bffbd/LICENSE",
+        "bundledPath": "THIRD_PARTY/licenses/Audiveris-LICENSE"
+      },
+      "fonts": []
+    },
+    "musescore": {
+      "version": "4.7.4",
+      "tag": "v4.7.4",
+      "commit": "7688c005ad963ba09ee715aae53dbc7e8c9d5ef8",
+      "source": {
+        "repositoryUrl": "https://github.com/musescore/MuseScore",
+        "commit": "7688c005ad963ba09ee715aae53dbc7e8c9d5ef8",
+        "archiveUrl": "https://github.com/musescore/MuseScore/archive/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8.tar.gz",
+        "bundledPath": "THIRD_PARTY/sources/musescore-7688c005ad963ba09ee715aae53dbc7e8c9d5ef8.tar.gz"
+      },
+      "license": {
+        "spdx": "GPL-3.0-only",
+        "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/LICENSE.txt",
+        "bundledPath": "THIRD_PARTY/licenses/MuseScore-LICENSE.txt"
+      },
+      "fonts": [
+        {
+          "family": "Bravura",
+          "sourcePath": "fonts/bravura",
+          "bundledPath": "tools/musescore/fonts/bravura",
+          "license": {
+            "spdx": "OFL-1.1",
+            "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/bravura/OFL.txt",
+            "bundledPath": "THIRD_PARTY/fonts/Bravura-OFL.txt"
+          }
+        },
+        {
+          "family": "Leland",
+          "sourcePath": "fonts/leland",
+          "bundledPath": "tools/musescore/fonts/leland",
+          "license": {
+            "spdx": "OFL-1.1",
+            "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/leland/LICENSE.txt",
+            "bundledPath": "THIRD_PARTY/fonts/Leland-LICENSE.txt"
+          }
+        }
+      ]
+    }
+  },
+  "standards": {
+    "musicXml": {
+      "version": "4.0",
+      "repositoryUrl": "https://github.com/w3c/musicxml",
+      "commit": "799e2defb2ece0ae7bafe08dcbcac25b2c631d53",
+      "schemas": [
+        { "sourcePath": "schema/container.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/container.xsd", "bundledPath": "vendor/musicxml-4.0/container.xsd" },
+        { "sourcePath": "schema/musicxml.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/musicxml.xsd", "bundledPath": "vendor/musicxml-4.0/musicxml.xsd" },
+        { "sourcePath": "schema/opus.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/opus.xsd", "bundledPath": "vendor/musicxml-4.0/opus.xsd" },
+        { "sourcePath": "schema/sounds.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/sounds.xsd", "bundledPath": "vendor/musicxml-4.0/sounds.xsd" },
+        { "sourcePath": "schema/xlink.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/xlink.xsd", "bundledPath": "vendor/musicxml-4.0/xlink.xsd" },
+        { "sourcePath": "schema/xml.xsd", "sourceUrl": "https://raw.githubusercontent.com/w3c/musicxml/799e2defb2ece0ae7bafe08dcbcac25b2c631d53/schema/xml.xsd", "bundledPath": "vendor/musicxml-4.0/xml.xsd" }
+      ]
+    }
+  },
+  "npmDependencies": { "libxml2-wasm": "0.7.1", "fflate": "0.8.3" },
+  "platforms": [
+    {
+      "id": "macos-14-arm64", "releaseTarget": "darwin-arm64", "os": "macos", "osVersion": "14", "arch": "arm64",
+      "runtimes": {
+        "audiveris": { "assetName": "Audiveris-5.11.0-macosx-arm64.dmg", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-macosx-arm64.dmg", "sha256": "17491af8b6d40153b031dd1f0815e37213f0999ef23f10586af46706e59b2eb6", "extraction": "dmg-copy-app", "stagedExecutable": "tools/audiveris/Audiveris.app/Contents/MacOS/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore Studio.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+      }
+    },
+    {
+      "id": "macos-14-x64", "releaseTarget": "darwin-x64", "os": "macos", "osVersion": "14", "arch": "x64",
+      "runtimes": {
+        "audiveris": { "assetName": "Audiveris-5.11.0-macosx-x86_64.dmg", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-macosx-x86_64.dmg", "sha256": "11794424c6f1698617836a77d2c5818c46405a3fe7388281c623c4e383fa33cb", "extraction": "dmg-copy-app", "stagedExecutable": "tools/audiveris/Audiveris.app/Contents/MacOS/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore Studio.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+      }
+    },
+    {
+      "id": "ubuntu-22.04-x64", "releaseTarget": "linux-x64", "os": "ubuntu", "osVersion": "22.04", "arch": "x64",
+      "runtimes": {
+        "audiveris": { "assetName": "Audiveris-5.11.0-ubuntu22.04-x86_64.deb", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-ubuntu22.04-x86_64.deb", "sha256": "ae714594f40e54b1a4951fc3f914f08ae38fe5d07b7f2283b1a904fdb6e0a318", "extraction": "deb-extract", "stagedExecutable": "tools/audiveris/bin/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075-x86_64.AppImage", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075-x86_64.AppImage", "sha256": "9233ed1b87d3e6b45722278f3c286dcd41e83da778bd0f80a1dd04949696ad93", "extraction": "appimage-extract", "stagedExecutable": "tools/musescore/AppRun", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+      }
+    },
+    {
+      "id": "ubuntu-24.04-x64", "releaseTarget": "linux-x64", "os": "ubuntu", "osVersion": "24.04", "arch": "x64",
+      "runtimes": {
+        "audiveris": { "assetName": "Audiveris-5.11.0-ubuntu24.04-x86_64.deb", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-ubuntu24.04-x86_64.deb", "sha256": "f20113aaa33b3149ec8d6a09b2a7963360e65fafd92d69389987a85bbc3ec7a3", "extraction": "deb-extract", "stagedExecutable": "tools/audiveris/bin/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075-x86_64.AppImage", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075-x86_64.AppImage", "sha256": "9233ed1b87d3e6b45722278f3c286dcd41e83da778bd0f80a1dd04949696ad93", "extraction": "appimage-extract", "stagedExecutable": "tools/musescore/AppRun", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+      }
+    },
+    {
+      "id": "windows-2022-x64", "releaseTarget": "windows-x64", "os": "windows", "osVersion": "2022", "arch": "x64",
+      "runtimes": {
+        "audiveris": { "assetName": "Audiveris-5.11.0-windowsConsole-x86_64.msi", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-windowsConsole-x86_64.msi", "sha256": "5f1b4e96a12c53c7da426814b76e599363c4181e291855996e0a6878dda95f71", "extraction": "msi-admin", "stagedExecutable": "tools/audiveris/bin/Audiveris.exe", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075-x86_64.msi", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075-x86_64.msi", "sha256": "64fe70e5cb9ffe159d047d1e88db567bd101f60d36b0de28feb674716929a378", "extraction": "msi-admin", "stagedExecutable": "tools/musescore/bin/MuseScore4.exe", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "configDigest": "LOCKED",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "contentWidthPx": 1000,
+      "staffGapPx": 12,
+      "boundaryConnectedNotationWidthPx": 0,
+      "boundaryComponentCrossingPx": 0,
+      "renderedStaffGapPx": 8,
+      "inkContrast": 24,
+      "nonNotationCoverage": 0,
+      "notationKind": "tab",
+      "boundaryKind": "none",
+      "contaminationKind": "clean"
+    }
+  ],
+  "acceptedScores": [
+    { "frameNumber": 1, "scoreNumber": 1, "pageNumber": 1 }
+  ],
+  "pageLineage": [
+    { "pageNumber": 1, "scoreNumbers": [1] }
+  ],
+  "duplicates": []
+}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   aggregateAssetValuesBySourceGroup, bootstrapPairedGroupDeltas, computeBoundaryRecall,
-  computeUniqueStateRecall, createMulberry32, evaluatePromotion, type BenchmarkGroupEligibility
+  computeStructuredPrecision, computeUniqueStateRecall, createMulberry32, evaluatePromotion, type BenchmarkGroupEligibility
 } from "../benchmarks/metrics";
 
 const REQUIRED_TAGS = ["static", "cursor", "scroll", "hard-turn", "fade", "compression", "no-score"] as const;
@@ -90,6 +90,29 @@ describe("benchmark metrics", () => {
     assert.equal(ineligible.eligible, false);
     assert.equal(failedGate.exitCode, 4);
     assert.deepEqual(failedGate.gateFailures, ["candidate-delta-upper95", "case-budget"]);
+  });
+
+  it("rejects a precision claim when no structured case was predicted", () => {
+    // Given an otherwise eligible run with no structured predictions.
+    const passingIntervals = {
+      stateRecall: { replicateCount: 10_000, lower95: 0, upper95: 0.2 },
+      boundaryRecall: { replicateCount: 10_000, lower95: 0.01, upper95: 0.3 },
+      candidateDelta: { replicateCount: 10_000, lower95: -2, upper95: 0 }
+    };
+    // When precision has no eligible denominator.
+    const result = evaluatePromotion({ claimTier: "external-gated", groups: eligibleGroups(), calibrationTunedDuringRun: false,
+      everyCaseWithinBudget: true, structuredPrecision: null, bootstrap: passingIntervals });
+    // Then the promotion gate names the missing structured denominator instead of claiming precision.
+    assert.equal(result.promotionPassed, false);
+    assert.ok(result.gateFailures.includes("structured-precision"));
+  });
+
+  it("represents zero structured predictions as an unclaimable precision", () => {
+    // Given no predicted structured cases.
+    // When the precision denominator is computed.
+    const precision = computeStructuredPrecision(0, 0);
+    // Then the result remains unclaimable rather than becoming a false perfect score.
+    assert.equal(precision, null);
   });
 
   it("keeps synthetic runs mechanics-only with no quality claim", () => {

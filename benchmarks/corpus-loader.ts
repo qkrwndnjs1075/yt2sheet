@@ -24,11 +24,15 @@ export class CorpusLoadError extends Error {
 }
 type VerifiedHashes = Readonly<Record<"sourceSha256" | "labelsSha256" | "eventTraceSha256" | "rightsEvidenceSha256", string>> & {
   readonly maskSha256: readonly string[];
+  readonly contentSha256: string;
+  readonly groundTruthMusicXmlSha256?: string;
+  readonly generatorProvenanceSha256?: string;
 };
 export type ApprovedCorpusAsset = CorpusAsset & { readonly rights: Extract<CorpusAsset["rights"], { readonly decision: "approved" }> };
 export type LoadedCorpusAsset = Readonly<{
   asset: ApprovedCorpusAsset;
   sourcePath: string;
+  musicXmlPath?: string;
   labelsPath: string;
   eventTracePath: string;
   rightsEvidencePath: string;
@@ -59,9 +63,24 @@ async function loadAsset(root: string, asset: CorpusAsset): Promise<LoadedCorpus
   const labelsFile = await verifyFile(root, asset.labels.relativePath, asset.labels.sha256);
   const eventFile = await verifyFile(root, asset.source.eventTrace.relativePath, asset.source.eventTrace.sha256);
   const evidence = await verifyFile(root, asset.rights.evidence.relativePath, asset.rights.evidence.sha256);
+  let contentSha256 = asset.source.contentSha256 ?? source.sha256;
+  let musicXmlPath: string | undefined;
+  let groundTruthMusicXmlSha256: string | undefined;
+  let generatorProvenanceSha256: string | undefined;
+  if (asset.source.kind === "generated-local" || asset.source.kind === "local-video") {
+    const musicXml = await verifyFile(root, asset.source.generation.musicXml.relativePath, asset.source.generation.musicXml.sha256);
+    musicXmlPath = musicXml.path;
+    const provenance = await verifyFile(root, asset.source.generation.generator.provenance.relativePath, asset.source.generation.generator.provenance.sha256);
+    groundTruthMusicXmlSha256 = musicXml.sha256;
+    generatorProvenanceSha256 = provenance.sha256;
+    if (asset.source.contentSha256 !== musicXml.sha256) {
+      invalidCorpus(`content hash does not match MusicXML for ${asset.assetId}`);
+    }
+    contentSha256 = musicXml.sha256;
+  }
   const labels = parseJson(labelsFile.bytes, scoreLabelsSchema, `labels for ${asset.assetId}`);
   const eventTrace = parseJson(eventFile.bytes, scoreEventsSchema, `events for ${asset.assetId}`);
-  validateLabels(asset, labels);
+  validateLabels(asset, labels, groundTruthMusicXmlSha256);
   validateEvents(asset, eventTrace);
   const maskSha256: string[] = [];
   for (const probe of labels.probes) {
@@ -75,6 +94,7 @@ async function loadAsset(root: string, asset: CorpusAsset): Promise<LoadedCorpus
   return {
     asset: approvedAsset,
     sourcePath: source.path,
+    ...(musicXmlPath === undefined ? {} : { musicXmlPath }),
     labelsPath: labelsFile.path,
     eventTracePath: eventFile.path,
     rightsEvidencePath: evidence.path,
@@ -85,6 +105,9 @@ async function loadAsset(root: string, asset: CorpusAsset): Promise<LoadedCorpus
       labelsSha256: labelsFile.sha256,
       eventTraceSha256: eventFile.sha256,
       rightsEvidenceSha256: evidence.sha256,
+      contentSha256,
+      ...(groundTruthMusicXmlSha256 === undefined ? {} : { groundTruthMusicXmlSha256 }),
+      ...(generatorProvenanceSha256 === undefined ? {} : { generatorProvenanceSha256 }),
       maskSha256,
     },
   };
@@ -92,6 +115,7 @@ async function loadAsset(root: string, asset: CorpusAsset): Promise<LoadedCorpus
 function validateManifest(manifest: CorpusManifest, now: Date): void {
   const assetIds = new Set<string>();
   const groups = new Map<string, { readonly split: CorpusAsset["split"]; readonly kind: CorpusAsset["source"]["kind"] }>();
+  const contentOwners = new Map<string, string>();
   for (const asset of manifest.assets) {
     requireUnique(assetIds, asset.assetId, "asset ID");
     requireUnique(new Set(asset.classTags), asset.classTags.length, `class tags for ${asset.assetId}`);
@@ -101,6 +125,15 @@ function validateManifest(manifest: CorpusManifest, now: Date): void {
     if (asset.source.kind === "external-local" && asset.split === "smoke") {
       invalidCorpus(`external asset ${asset.assetId} cannot use smoke split`);
     }
+    if ((asset.source.kind === "generated-local" || asset.source.kind === "local-video") && asset.split === "smoke") {
+      invalidCorpus(`generated asset ${asset.assetId} cannot use smoke split`);
+    }
+    const contentSha256 = asset.source.contentSha256 ?? asset.source.sha256;
+    const priorContent = contentOwners.get(contentSha256);
+    if (priorContent !== undefined && priorContent !== asset.sourceGroupId) {
+      invalidCorpus(`content hash leaks across source groups: ${asset.assetId}`);
+    }
+    contentOwners.set(contentSha256, asset.sourceGroupId);
     const prior = groups.get(asset.sourceGroupId);
     if (prior !== undefined && (prior.split !== asset.split || prior.kind !== asset.source.kind)) {
       invalidCorpus(`source group ${asset.sourceGroupId} leaks across split or source kind`);
@@ -109,12 +142,16 @@ function validateManifest(manifest: CorpusManifest, now: Date): void {
     if (asset.rights.decision !== "approved") {
       throw new CorpusLoadError("RIGHTS_INVALID", `asset ${asset.assetId} is blocked`);
     }
+    if ((asset.source.kind === "generated-local" || asset.source.kind === "local-video")
+      && (!asset.rights.allowedUses.derivatives || !asset.rights.allowedUses.redistribution)) {
+      throw new CorpusLoadError("RIGHTS_INVALID", `generated asset ${asset.assetId} lacks derivative or redistribution permission`);
+    }
     if (asset.rights.expiresAt !== undefined && Date.parse(asset.rights.expiresAt) <= now.getTime()) {
       throw new CorpusLoadError("RIGHTS_INVALID", `asset ${asset.assetId} rights are expired`);
     }
   }
 }
-function validateLabels(asset: CorpusAsset, labels: ScoreLabels): void {
+function validateLabels(asset: CorpusAsset, labels: ScoreLabels, groundTruthMusicXmlSha256?: string): void {
   if (labels.assetId !== asset.assetId || labels.durationMs !== asset.source.durationMs) {
     invalidCorpus(`labels do not match asset ${asset.assetId}`);
   }
@@ -150,6 +187,19 @@ function validateLabels(asset: CorpusAsset, labels: ScoreLabels): void {
       invalidCorpus(`external labels require two annotators and one adjudicator for ${asset.assetId}`);
     }
   }
+  if (asset.source.kind === "generated-local" || asset.source.kind === "local-video") {
+    if (labels.oracle === undefined || groundTruthMusicXmlSha256 === undefined
+      || labels.oracle.groundTruthMusicXmlSha256 !== groundTruthMusicXmlSha256) {
+      invalidCorpus(`oracle MusicXML hash does not match generated asset ${asset.assetId}`);
+    }
+    if (labels.oracle !== undefined && labels.oracle.expectedPageOrder.length !== labels.oracle.expectedPageCount) {
+      invalidCorpus(`oracle page order does not match page count for ${asset.assetId}`);
+    }
+    if (labels.oracle !== undefined && (labels.oracle.expectedStaffCounts.length !== labels.oracle.expectedPageCount
+      || labels.oracle.expectedSystemCounts.length !== labels.oracle.expectedPageCount)) {
+      invalidCorpus(`oracle page facts do not match page count for ${asset.assetId}`);
+    }
+  }
 }
 function validateEvents(asset: CorpusAsset, events: ScoreEvents): void {
   if (events.assetId !== asset.assetId) {
@@ -174,10 +224,11 @@ async function resolveCorpusRoot(input: string): Promise<string> {
 }
 async function resolveInputFile(root: string, input: string): Promise<string> {
   const lexical = resolve(input);
-  if (!insideRoot(root, lexical)) {
+  const canonical = await realpath(lexical).catch((error: unknown) => pathFailure("manifest cannot be resolved", error));
+  if (!insideRoot(root, canonical)) {
     throw new CorpusLoadError("PATH_INVALID", "manifest must be inside corpus root");
   }
-  return resolveExistingFile(root, lexical);
+  return resolveExistingFile(root, canonical);
 }
 async function verifyFile(root: string, relativePath: string, expectedSha256: string, expectedLength?: number): Promise<VerifiedFile> {
   if (isAbsolute(relativePath) || win32.isAbsolute(relativePath) || relativePath.includes("\\")) {

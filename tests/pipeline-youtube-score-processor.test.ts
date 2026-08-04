@@ -4,9 +4,11 @@ import { lstat, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import { createScoreExtractionQualityReport, deriveScoreQualitySidecarPath, type ScoreExtractionQualityReport } from "../pipeline/score-quality-report";
+import sharp from "sharp";
+import { createScoreExtractionQualityReport, deriveScoreQualitySidecarPath, SCORE_EXTRACTION_QUALITY_REPORT_VERSION, type ScoreExtractionQualityReport } from "../pipeline/score-quality-report";
 import { ScorePipelineError, type ScoreJobProcessorContext } from "../pipeline/job-contract";
 import type { ResolvedScoreTimeRange } from "../pipeline/score-time-range";
+import type { CreateScorePdfOptions } from "../pipeline/score-video-processor";
 import { buildFrameExtractionArguments, buildVideoDownloadArguments, YouTubeScoreProcessor } from "../pipeline/youtube-score-processor";
 
 describe("YouTube score frame extraction", () => {
@@ -15,7 +17,7 @@ describe("YouTube score frame extraction", () => {
 
     assert.equal(args[args.indexOf("--ffmpeg-location") + 1], "tools/ffmpeg.exe");
     assert.equal(args[args.indexOf("--merge-output-format") + 1], "mp4");
-    assert.equal(args[args.indexOf("-o") + 1], "work\\source.%(ext)s");
+    assert.equal(args[args.indexOf("-o") + 1], join("work", "source.%(ext)s"));
   });
 
   it("lets yt-dlp resolve a bare ffmpeg command from PATH", () => {
@@ -41,7 +43,7 @@ describe("YouTube score frame extraction", () => {
     assert.equal(args.includes("scale=960:-2:force_original_aspect_ratio=decrease"), false);
     assert.equal(args[args.indexOf("-frames:v") + 1], "3600");
     assert.equal(args[args.indexOf("-q:v") + 1], "2");
-    assert.equal(output, "frames\\frame-%06d.jpg");
+    assert.equal(output, join("frames", "frame-%06d.jpg"));
   });
 
   it("places fractional input trim flags after the input while retaining the frame cap", () => {
@@ -352,6 +354,91 @@ describe("YouTube score cancellation", () => {
     ]);
   });
 
+  it("uses the reviewed pipeline by default and forwards its outcome and warnings", async (t) => {
+    // Given: a production-shaped processor with media seams but no reviewed-pipeline injection.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-reviewed-default-");
+    let observedOptions: ObservedPdfOptions | undefined;
+    const warning = { pageNumber: 1, code: "RASTER_LOW_CONTRAST" as const, evidence: { inkContrast: 20 } };
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: createProcessRunner(),
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, outputPath, options) => {
+        observedOptions = options;
+        await writeFile(outputPath, "%PDF-reviewed-default");
+        return { pageCount: 2, scoreCount: 2, reviewOutcome: "raster-fallback", warnings: [warning] };
+      }
+    });
+
+    // When: the normal processor path creates a result without a test-only factory override.
+    const result = await processor.process(jobInput(), createContext(new AbortController().signal));
+
+    // Then: the PDF creator receives reviewed stages and the public job result preserves review metadata.
+    assert.ok(observedOptions?.reviewedPipeline);
+    assert.equal(typeof observedOptions.reviewedPipeline.stages.reviewRaster, "function");
+    assert.deepEqual(result, { filePath: result.filePath, pageCount: 2, reviewOutcome: "raster-fallback", warnings: [warning] });
+  });
+
+  it("fails closed on invalid default raster bytes before structured tools or publication", async (t) => {
+    // Given: the default installed reviewed factory receives a file that exists but is not an image.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-default-invalid-raster-");
+    const invalidRaster = join(dataRoot, "existing-but-not-an-image.png");
+    await writeFile(invalidRaster, "not a reviewed raster image");
+    let structuredToolCalled = false;
+    let observedStatus: string | undefined;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: createProcessRunner(),
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, _outputPath, options) => {
+        const reviewed = options.reviewedPipeline;
+        assert.ok(reviewed);
+        const review = await reviewed.stages.reviewRaster({ pages: [{ path: invalidRaster, lineage: { pageNumber: 1, sourceFrameIds: ["frame-000001"], sourceScoreIds: ["score-0001"] }, sourceSystemCount: 1, sourceStaffGroupCount: 1 }] });
+        observedStatus = review.status;
+        structuredToolCalled = review.status === "pass";
+        throw new ScorePipelineError("RASTER_REVIEW_FAILED", "raster gate blocked");
+      }
+    });
+
+    // When/Then: a hard default raster result aborts before a structured tool or owned output can exist.
+    await assert.rejects(processor.process(jobInput(), createContext(new AbortController().signal)), { code: "RASTER_REVIEW_FAILED" });
+    assert.equal(observedStatus, "blocked");
+    assert.equal(structuredToolCalled, false);
+    assert.deepEqual(await readdir(join(dataRoot, "results")), []);
+  });
+
+  it("returns an authoritative pass for a valid A4 default raster fixture", async (t) => {
+    // Given: a valid production-shaped A4 raster page with observable score ink.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-default-valid-raster-");
+    const validRaster = join(dataRoot, "page-0001.png");
+    await writeReviewedRasterFixture(validRaster);
+    let observedDigest: string | undefined;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: createProcessRunner(),
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, outputPath, options) => {
+        const reviewed = options.reviewedPipeline;
+        assert.ok(reviewed);
+        const review = await reviewed.stages.reviewRaster({ pages: [{ path: validRaster, lineage: { pageNumber: 1, sourceFrameIds: ["frame-000001"], sourceScoreIds: ["score-0001"] }, sourceSystemCount: 1, sourceStaffGroupCount: 1 }] });
+        assert.equal(review.status, "pass");
+        assert.equal(review.omrEligible, true);
+        assert.deepEqual(review.findings, []);
+        observedDigest = review.configDigest;
+        await writeFile(outputPath, "%PDF-reviewed-valid-raster");
+        return { pageCount: 1, scoreCount: 1, reviewOutcome: "structured", warnings: [] };
+      }
+    });
+
+    // When/Then: the valid page carries the locked digest and reaches the existing result contract.
+    const result = await processor.process(jobInput(), createContext(new AbortController().signal));
+    assert.equal(observedDigest?.length, 64);
+    assert.deepEqual(result, { filePath: result.filePath, pageCount: 1, reviewOutcome: "structured", warnings: [] });
+  });
+
   it("removes the owned pair when cancellation arrives after both writes", async (t) => {
     // Given: a PDF stage that writes the owned pair and then cancels the job.
     const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-abort-");
@@ -370,7 +457,7 @@ describe("YouTube score cancellation", () => {
         ]);
         assert.ok(options.qualityReportSink);
         await options.qualityReportSink(qualityReport());
-        assert.equal(JSON.parse(await readFile(deriveScoreQualitySidecarPath(outputPath), "utf8")).version, "score-extraction-quality-report/1");
+        assert.equal(JSON.parse(await readFile(deriveScoreQualitySidecarPath(outputPath), "utf8")).version, SCORE_EXTRACTION_QUALITY_REPORT_VERSION);
         controller.abort();
         return { pageCount: 1, scoreCount: 1 };
       }
@@ -590,13 +677,7 @@ describe("YouTube score cancellation", () => {
   });
 });
 
-type ObservedPdfOptions = {
-  readonly onProgress?: (progress: number) => void;
-  readonly signal?: AbortSignal;
-  readonly outputArtifactSink?: () => Promise<void>;
-  readonly qualityReportSink?: (report: ScoreExtractionQualityReport) => Promise<void>;
-  readonly metadata: { readonly videoId: string; readonly createdAt: Date };
-};
+type ObservedPdfOptions = CreateScorePdfOptions;
 
 type ArtifactObservation = {
   readonly path: string;
@@ -616,6 +697,15 @@ function qualityReport(): ScoreExtractionQualityReport {
     durationsMs: { analysis: 1, deduplication: 2, pageComposition: 3, total: 6 },
     frames: [{ frameId: "frame-000001", disposition: "accepted", scoreId: "score-0001", pageNumber: 1 }]
   });
+}
+
+async function writeReviewedRasterFixture(path: string): Promise<void> {
+  const staffLines = Array.from({ length: 30 }, (_, index) => {
+    const y = 180 + index * 28;
+    return `<line x1="100" y1="${y}" x2="1100" y2="${y}" stroke="black" stroke-width="3"/>`;
+  }).join("");
+  const image = Buffer.from(`<svg width="1200" height="1697" xmlns="http://www.w3.org/2000/svg"><rect width="1200" height="1697" fill="white"/>${staffLines}<ellipse cx="420" cy="280" rx="24" ry="16" fill="black"/><line x1="440" y1="280" x2="440" y2="220" stroke="black" stroke-width="5"/></svg>`);
+  await sharp(image).png().toFile(path);
 }
 
 type ObservedRunOptions = {

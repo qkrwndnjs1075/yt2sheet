@@ -49,6 +49,7 @@ export async function runDoctor(options: DoctorOptions = {}, dependencies: Docto
   nextStage("미디어 도구");
   const tooling = await inspectTools(options.cookiesPath);
   checks.push(...tooling.checks);
+  checks.push(...missingScoreRuntimeFailures(tooling.checks));
 
   nextStage("출력 디렉터리");
   checks.push(await checkOutputDirectory(cwd));
@@ -82,6 +83,21 @@ export async function runDoctor(options: DoctorOptions = {}, dependencies: Docto
     status: hasFailure ? "failed" : hasWarning ? "warning" : "ready",
     exitCode: hasFailure ? 1 : 0
   };
+}
+
+function missingScoreRuntimeFailures(checks: readonly DoctorCheck[]): readonly DoctorCheck[] {
+  const required = ["runtime-manifest", "audiveris", "musescore"] as const;
+  return required.flatMap((key) => {
+    const check = checks.find((candidate) => candidate.key === key);
+    return check?.status === "pass" || check?.status === "fail"
+      ? []
+      : [{
+        key,
+        label: key === "runtime-manifest" ? "점수 런타임 매니페스트" : key === "audiveris" ? "Audiveris" : "MuseScore",
+        status: "fail" as const,
+        message: "패키지 소유 점수 런타임이 확인되지 않았습니다. npm 설치를 건너뛰었다면 두 런타임을 설치한 뒤 다시 실행해 주세요."
+      }];
+  });
 }
 
 export function formatDoctorReport(result: DoctorResult): string {

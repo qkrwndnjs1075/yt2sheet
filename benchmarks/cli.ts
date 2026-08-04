@@ -9,9 +9,10 @@ class CliUsageError extends Error {
 }
 
 function parseArguments(argumentsList: readonly string[]): CliInput {
-  if (argumentsList[0] !== "run") throw new CliUsageError();
+  const startIndex = argumentsList[0] === "run" ? 1 : 0;
+  if (argumentsList[0] !== "run" && !argumentsList[0]?.startsWith("--")) throw new CliUsageError();
   const flags = new Map<string, string>();
-  for (let index = 1; index < argumentsList.length; index += 2) {
+  for (let index = startIndex; index < argumentsList.length; index += 2) {
     const flag = argumentsList[index];
     const value = argumentsList[index + 1];
     if (flag === undefined || value === undefined || !ALLOWED_FLAGS.has(flag) || value.startsWith("--") || flags.has(flag)) {
