@@ -343,6 +343,38 @@ describe("score video processor", () => {
     );
   });
 
+  it("keeps the clean representative when a later duplicate fades to neutral gray score paper", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-faded-score-paper-");
+    const clean = join(directory, "frame-1.png");
+    const faded = join(directory, "frame-2.png");
+    await Promise.all([
+      writeScoreFrame(clean, 150),
+      writeScoreFrame(faded, 150, "rgb(203, 203, 203)")
+    ]);
+
+    const result = await createScorePdfFromFrames([clean, faded], directory, join(directory, "result.pdf"), pdfOptions());
+
+    assert.equal(result.scoreCount, 1);
+    assert.deepEqual(await readdir(join(directory, "scores")), ["score-0001.png"]);
+    assert.ok(await paperMedian(join(directory, "scores", "score-0001.png")) >= 250);
+  });
+
+  it("prefers a clean representative when a faded duplicate appears first", async (t) => {
+    const directory = await createTempDirectory(t, "yt2sheet-faded-score-paper-reverse-");
+    const faded = join(directory, "frame-1.png");
+    const clean = join(directory, "frame-2.png");
+    await Promise.all([
+      writeScoreFrame(faded, 150, "rgb(203, 203, 203)"),
+      writeScoreFrame(clean, 150)
+    ]);
+
+    const result = await createScorePdfFromFrames([faded, clean], directory, join(directory, "result.pdf"), pdfOptions());
+
+    assert.equal(result.scoreCount, 1);
+    assert.deepEqual(await readdir(join(directory, "scores")), ["score-0002.png"]);
+    assert.ok(await paperMedian(join(directory, "scores", "score-0002.png")) >= 250);
+  });
+
   it("keeps changed notation distinct with a moving cyan marker and translucent score overlay", async (t) => {
     const directory = await createTempDirectory(t, "yt2sheet-production-playback-signal-distinct-");
     const first = join(directory, "frame-1.png");
@@ -508,6 +540,12 @@ async function writeScoreFrame(path: string, markerX: number, paper = "white"): 
 
 async function writeBlankFrame(path: string): Promise<void> {
   await sharp({ create: { width: 960, height: 360, channels: 3, background: "white" } }).png().toFile(path);
+}
+
+async function paperMedian(path: string): Promise<number> {
+  const { data, info } = await sharp(path).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const values = Array.from({ length: data.length / info.channels }, (_, index) => data[index * info.channels]).sort((left, right) => left - right);
+  return values[Math.floor(values.length / 2)] ?? 0;
 }
 
 async function writeScoreFrameWithPhoto(path: string): Promise<void> {

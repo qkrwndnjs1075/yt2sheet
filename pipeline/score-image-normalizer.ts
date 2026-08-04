@@ -15,17 +15,27 @@ const TRACKER_MIN_HEIGHT_RATIO = 0.8;
 const TRACKER_MAX_WIDTH_RATIO = 0.02;
 const MAX_NOTATION_TRANSLATION = 2;
 const MIN_NOTATION_OVERLAP = 0.6;
+const MIN_FADED_NOTATION_OVERLAP = 0.5;
+const MIN_FADED_PAPER_LUMINANCE_DELTA = 40;
 const IDENTITY_LIGHT_ARTIFACT_CHANNEL_MIN = 180;
 const PLAYBACK_MARKER_GREEN_MIN = 120;
 const PLAYBACK_MARKER_BLUE_MIN = 140;
 const PLAYBACK_MARKER_GREEN_EXCESS_MIN = 80;
 const PLAYBACK_MARKER_BLUE_EXCESS_MIN = 100;
+const REPRESENTATIVE_INK_LUMINANCE_DELTA = 24;
+const REPRESENTATIVE_ROW_INK_RATIO = 0.002;
 
 export type NotationIdentity = {
   readonly width: number;
   readonly height: number;
   readonly pixels: Uint8Array;
   readonly staffGap: number | null;
+};
+
+export type ScoreRepresentativeQuality = {
+  readonly contentHeightRatio: number;
+  readonly paperLuminance: number;
+  readonly inkContrast: number;
 };
 
 export async function normalizeScoreImage(image: Buffer, verticalPadding = 0): Promise<Buffer> {
@@ -91,6 +101,39 @@ export async function createDeduplicationImage(image: Buffer): Promise<Buffer> {
   return sharp(raw.data, { raw: raw.info }).png().toBuffer();
 }
 
+export async function createScoreRepresentativeQuality(image: Buffer): Promise<ScoreRepresentativeQuality> {
+  const raw = await sharp(image).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const histogram = new Uint32Array(256);
+  for (const luminance of raw.data) histogram[luminance] += 1;
+  const paperLuminance = histogramPercentile(histogram, raw.data.length, 0.5);
+  const inkThreshold = Math.max(0, paperLuminance - REPRESENTATIVE_INK_LUMINANCE_DELTA);
+  const minimumRowInk = Math.max(1, Math.ceil(raw.info.width * REPRESENTATIVE_ROW_INK_RATIO));
+  let top = raw.info.height;
+  let bottom = -1;
+  let inkSum = 0;
+  let inkCount = 0;
+
+  for (let y = 0; y < raw.info.height; y += 1) {
+    let rowInk = 0;
+    for (let x = 0; x < raw.info.width; x += 1) {
+      const luminance = raw.data[y * raw.info.width + x];
+      if (luminance >= inkThreshold) continue;
+      rowInk += 1;
+      inkSum += luminance;
+      inkCount += 1;
+    }
+    if (rowInk < minimumRowInk) continue;
+    top = Math.min(top, y);
+    bottom = y;
+  }
+
+  return {
+    contentHeightRatio: bottom < top ? 0 : (bottom - top + 1) / Math.max(1, raw.info.width),
+    paperLuminance,
+    inkContrast: inkCount === 0 ? 0 : paperLuminance - inkSum / inkCount
+  };
+}
+
 export async function createNotationIdentity(image: Buffer): Promise<NotationIdentity> {
   const raw = await sharp(image).greyscale().raw().toBuffer({ resolveWithObject: true });
   const staffRows = findStaffRows(raw.data, raw.info.width, raw.info.height);
@@ -123,7 +166,7 @@ export async function createNotationIdentity(image: Buffer): Promise<NotationIde
   return { width: NOTATION_IDENTITY_WIDTH, height: NOTATION_IDENTITY_HEIGHT, pixels, staffGap };
 }
 
-export function hasStrongNotationOverlap(left: NotationIdentity, right: NotationIdentity): boolean {
+export function hasStrongNotationOverlap(left: NotationIdentity, right: NotationIdentity, minimumOverlap = MIN_NOTATION_OVERLAP): boolean {
   if (left.width !== right.width || left.height !== right.height) return false;
   for (let offsetY = -MAX_NOTATION_TRANSLATION; offsetY <= MAX_NOTATION_TRANSLATION; offsetY += 1) {
     const leftTop = Math.max(0, offsetY);
@@ -143,10 +186,20 @@ export function hasStrongNotationOverlap(left: NotationIdentity, right: Notation
           if (leftInk === 1 && rightInk === 1) sharedInk += 1;
         }
       }
-      if (combinedInk > 0 && sharedInk / combinedInk >= MIN_NOTATION_OVERLAP) return true;
+      if (combinedInk > 0 && sharedInk / combinedInk >= minimumOverlap) return true;
     }
   }
   return false;
+}
+
+export function hasFadedNotationOverlap(
+  left: NotationIdentity,
+  right: NotationIdentity,
+  leftPaperLuminance: number,
+  rightPaperLuminance: number
+): boolean {
+  return Math.abs(leftPaperLuminance - rightPaperLuminance) >= MIN_FADED_PAPER_LUMINANCE_DELTA
+    && hasStrongNotationOverlap(left, right, MIN_FADED_NOTATION_OVERLAP);
 }
 
 function removePhotographicComponents(
@@ -236,6 +289,16 @@ function isDeduplicationArtifact(red: number, green: number, blue: number): bool
     && blue >= PLAYBACK_MARKER_BLUE_MIN
     && green - red >= PLAYBACK_MARKER_GREEN_EXCESS_MIN
     && blue - red >= PLAYBACK_MARKER_BLUE_EXCESS_MIN;
+}
+
+function histogramPercentile(histogram: Uint32Array, count: number, percentile: number): number {
+  const target = Math.floor(Math.max(0, count - 1) * percentile);
+  let seen = 0;
+  for (let luminance = 0; luminance < histogram.length; luminance += 1) {
+    seen += histogram[luminance];
+    if (seen > target) return luminance;
+  }
+  return 255;
 }
 
 function findStaffRows(data: Buffer, width: number, height: number): Uint8Array {

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import sharp from "sharp";
-import { normalizeScoreImage } from "../pipeline/score-image-normalizer";
+import {
+  createScoreRepresentativeQuality,
+  hasFadedNotationOverlap,
+  hasStrongNotationOverlap,
+  normalizeScoreImage,
+  type NotationIdentity
+} from "../pipeline/score-image-normalizer";
 
 describe("score image normalizer", () => {
   it("removes detached non-score text below the last staff context", async () => {
@@ -94,7 +100,81 @@ describe("score image normalizer", () => {
     assert.ok(sourceTrailingInk > 20);
     assert.equal(await darkPixelsIn(normalized, trailingRegion), sourceTrailingInk);
   });
+
+  it("measures neutral gray score paper against its own paper tone", async () => {
+    const [clean, faded] = await Promise.all([
+      scoreForRepresentativeQuality("white"),
+      scoreForRepresentativeQuality("rgb(203, 203, 203)")
+    ]);
+    const fadedBefore = Buffer.from(faded);
+
+    const [cleanQuality, fadedQuality] = await Promise.all([
+      createScoreRepresentativeQuality(clean),
+      createScoreRepresentativeQuality(faded)
+    ]);
+
+    assert.ok(Math.abs(cleanQuality.contentHeightRatio - fadedQuality.contentHeightRatio) < 0.001);
+    assert.equal(cleanQuality.paperLuminance, 255);
+    assert.equal(fadedQuality.paperLuminance, 203);
+    assert.deepEqual(faded, fadedBefore, "quality measurement must not alter faded score pixels");
+  });
+
+  it("measures a delayed title as more complete score context while preserving low-contrast notation", async () => {
+    const [plain, titled] = await Promise.all([
+      scoreForRepresentativeQuality("white"),
+      scoreForRepresentativeQuality("white", true)
+    ]);
+    const titledBefore = Buffer.from(titled);
+
+    const [plainQuality, titledQuality] = await Promise.all([
+      createScoreRepresentativeQuality(plain),
+      createScoreRepresentativeQuality(titled)
+    ]);
+
+    assert.ok(titledQuality.contentHeightRatio >= plainQuality.contentHeightRatio * 1.04);
+    assert.ok(titledQuality.inkContrast > 0, "low-contrast notation must still contribute to representative quality");
+    assert.deepEqual(titled, titledBefore, "quality measurement must not erase notation");
+  });
+
+  it("recognizes a faded score identity without relaxing the normal duplicate threshold", () => {
+    const [clean, faded] = fadedNotationIdentities();
+
+    assert.equal(hasStrongNotationOverlap(clean, faded), false);
+    assert.equal(hasFadedNotationOverlap(clean, faded, 255, 182), true);
+    assert.equal(hasFadedNotationOverlap(clean, faded, 255, 255), false);
+  });
 });
+
+function fadedNotationIdentities(): readonly [NotationIdentity, NotationIdentity] {
+  const width = 96;
+  const height = 48;
+  const cleanPixels = new Uint8Array(width * height);
+  const fadedPixels = new Uint8Array(width * height);
+  cleanPixels.fill(1, 0, 1_358);
+  fadedPixels.fill(1, 0, 1_092);
+  fadedPixels.fill(1, 1_358, 2_026);
+  return [
+    { width, height, pixels: cleanPixels, staffGap: 13 },
+    { width, height, pixels: fadedPixels, staffGap: 13 }
+  ];
+}
+
+async function scoreForRepresentativeQuality(paper: string, includeTitle = false): Promise<Buffer> {
+  const staffLines = [120, 132, 144, 156, 168, 210, 222, 234, 246, 258]
+    .map((y) => `<line x1="40" y1="${y}" x2="920" y2="${y}" stroke="black" stroke-width="2"/>`)
+    .join("");
+  const title = includeTitle ? '<text x="320" y="72" font-size="34">Small notes: 1961</text>' : "";
+  const svg = Buffer.from(`<svg width="960" height="360" xmlns="http://www.w3.org/2000/svg">
+    <rect width="960" height="360" fill="${paper}"/>
+    ${title}
+    ${staffLines}
+    <ellipse cx="220" cy="120" rx="22" ry="14" fill="rgb(145, 145, 145)"/>
+    <line x1="240" y1="120" x2="240" y2="72" stroke="rgb(145, 145, 145)" stroke-width="5"/>
+    <ellipse cx="610" cy="238" rx="22" ry="14" fill="black"/>
+    <line x1="630" y1="238" x2="630" y2="190" stroke="black" stroke-width="5"/>
+  </svg>`);
+  return sharp(svg).png().toBuffer();
+}
 
 async function scoreWithDetachedCaption(includeLowerTail = false): Promise<Buffer> {
   const staffLines = [120, 132, 144, 156, 168, 210, 222, 234, 246, 258]

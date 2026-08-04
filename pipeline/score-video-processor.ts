@@ -16,9 +16,12 @@ import {
   createDeduplicationImage,
   createDominantInkHash,
   createNotationIdentity,
+  createScoreRepresentativeQuality,
+  hasFadedNotationOverlap,
   hasStrongNotationOverlap,
   normalizeScoreImage,
-  type NotationIdentity
+  type NotationIdentity,
+  type ScoreRepresentativeQuality
 } from "./score-image-normalizer";
 import { createGrayscaleAnalysis, prepareScoreCrop } from "./score-image-preparer";
 import { ScorePipelineError } from "./job-contract";
@@ -40,6 +43,7 @@ type AcceptedScore = {
   readonly dominantHash: Uint8Array;
   readonly notationIdentity: NotationIdentity;
   readonly image: { readonly width: number; readonly height: number };
+  readonly representativeQuality: ScoreRepresentativeQuality;
 };
 
 type FrameDecision =
@@ -56,7 +60,8 @@ const ANALYSIS_WIDTH = 1_280;
 const DOMINANT_DUPLICATE_DISTANCE = 8;
 const NOTATION_IDENTITY_CANDIDATE_DISTANCE = 34;
 const MAX_NOTATION_IDENTITY_STAFF_GAP_DELTA = 0.08;
-const MIN_REPRESENTATIVE_HEIGHT_GAIN_RATIO = 0.04;
+const MIN_REPRESENTATIVE_CONTENT_HEIGHT_GAIN_RATIO = 0.04;
+const MIN_REPRESENTATIVE_READABILITY_GAIN = 8;
 const DEFAULT_ANALYSIS_CONCURRENCY = 4;
 
 export type ScorePdfResult = {
@@ -129,7 +134,7 @@ export async function createScorePdfFromFrames(
       frameDecisions.push({ frameId, disposition: "accepted", scoreId: scoreIdentifier(scores.length), scoreIndex: scores.length - 1 });
     } else {
       const retained = scores[duplicateMatch.scoreIndex];
-      const discarded = hasMeaningfullyMoreVerticalScoreContext(retained, candidate) ? retained : candidate;
+      const discarded = shouldReplaceRepresentative(retained, candidate) ? retained : candidate;
       if (discarded === retained) scores[duplicateMatch.scoreIndex] = candidate;
       frameDecisions.push({ frameId, disposition: "duplicate", duplicateReason: duplicateMatch.reason });
       await rm(discarded.path, { force: true });
@@ -221,10 +226,11 @@ async function analyzeFrame(
     return null;
   }
   const deduplicationImage = await createDeduplicationImage(normalized);
-  const [hash, dominantHash, notationIdentity] = await Promise.all([
+  const [hash, dominantHash, notationIdentity, representativeQuality] = await Promise.all([
     createDifferenceHash(normalized),
     createDominantInkHash(normalized),
-    createNotationIdentity(deduplicationImage)
+    createNotationIdentity(deduplicationImage),
+    createScoreRepresentativeQuality(normalized)
   ]);
   if (dominantHash === null) return null;
   const outputPath = join(outputDirectory, `score-${String(outputIndex).padStart(4, "0")}.png`);
@@ -234,7 +240,8 @@ async function analyzeFrame(
     hash,
     dominantHash,
     notationIdentity,
-    image: { width: metadata.width, height: metadata.height }
+    image: { width: metadata.width, height: metadata.height },
+    representativeQuality
   };
 }
 
@@ -247,10 +254,14 @@ function findDuplicateMatch(scores: readonly AcceptedScore[], candidate: Accepte
   return null;
 }
 
-function hasMeaningfullyMoreVerticalScoreContext(left: AcceptedScore, right: AcceptedScore): boolean {
-  const leftHeightRatio = left.image.height / Math.max(1, left.image.width);
-  const rightHeightRatio = right.image.height / Math.max(1, right.image.width);
-  return rightHeightRatio >= leftHeightRatio * (1 + MIN_REPRESENTATIVE_HEIGHT_GAIN_RATIO);
+function shouldReplaceRepresentative(retained: AcceptedScore, candidate: AcceptedScore): boolean {
+  const retainedContent = retained.representativeQuality.contentHeightRatio;
+  const candidateContent = candidate.representativeQuality.contentHeightRatio;
+  if (candidateContent >= retainedContent * (1 + MIN_REPRESENTATIVE_CONTENT_HEIGHT_GAIN_RATIO)) return true;
+  if (retainedContent >= candidateContent * (1 + MIN_REPRESENTATIVE_CONTENT_HEIGHT_GAIN_RATIO)) return false;
+  const retainedReadability = retained.representativeQuality.paperLuminance + retained.representativeQuality.inkContrast;
+  const candidateReadability = candidate.representativeQuality.paperLuminance + candidate.representativeQuality.inkContrast;
+  return candidateReadability >= retainedReadability + MIN_REPRESENTATIVE_READABILITY_GAIN;
 }
 
 function duplicateReasonForPair(left: AcceptedScore, right: AcceptedScore): DuplicateReason | null {
@@ -263,7 +274,13 @@ function duplicateReasonForPair(left: AcceptedScore, right: AcceptedScore): Dupl
   }
   if (differenceDistance <= NOTATION_IDENTITY_CANDIDATE_DISTANCE
     && hasSimilarStaffGap(left.notationIdentity.staffGap, right.notationIdentity.staffGap)
-    && hasStrongNotationOverlap(left.notationIdentity, right.notationIdentity)) {
+    && (hasStrongNotationOverlap(left.notationIdentity, right.notationIdentity)
+      || hasFadedNotationOverlap(
+        left.notationIdentity,
+        right.notationIdentity,
+        left.representativeQuality.paperLuminance,
+        right.representativeQuality.paperLuminance
+      ))) {
     return resolveDuplicateReason({ nearDuplicate: false, dominantInk: false, notationIdentity: true });
   }
   return null;
