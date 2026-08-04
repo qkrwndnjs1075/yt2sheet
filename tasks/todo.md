@@ -1974,3 +1974,116 @@
 - The public raw PowerShell installer was run with `cli-v0.2.13` into an isolated temp root. It completed stages 1/7 through 7/7, reported `yt2sheet 0.2.13 windows-x64`, and the installed `yt2 help` exited 0. The user PATH was restored and the temp root removed.
 - The unversioned public raw installer path (no `YT2SHEET_RELEASE_TAG`) also resolved `releases/latest` to `yt2sheet 0.2.13 windows-x64`; its isolated `yt2 help` exited 0 and its temp root plus PATH change were removed/restored.
 - GitHub Actions annotations only report the existing Node.js 20 deprecation notice; all jobs passed.
+
+# G079 Gray final score output investigation and fix plan (2026-08-04)
+
+## Diagnosis
+
+- [x] Render and measure both pages of `yt2sheet-pDkESH-ItxQ.pdf`, isolating the gray final score region.
+- [x] Reproduce the supplied PDF byte-for-byte with the installed macOS `yt2sheet 0.2.13` pipeline.
+- [x] Trace the gray region through source frames, normalized score crops, duplicate selection, page composition, and PDF embedding.
+- [x] Confirm the cause by toggling representative replacement in an isolated scratch runtime while leaving product source unchanged.
+
+## Implementation plan
+
+- [x] Add a failing production-shaped regression to `tests/pipeline-score-video-processor.test.ts`: identical notation on a clean neutral sheet followed by a `rgb(203,203,203)` fade frame whose gray paper falsely expands the normalized vertical bounds. Require one score, the clean representative, a bright background, and preserved notation. Add the reverse-order case so selection is quality-based rather than first-frame-based.
+- [x] Add focused representative-metric tests to `tests/pipeline-score-image-normalizer.test.ts`: clean and 203-gray copies of identical notation must yield the same paper-relative content span; a real delayed title or extra staff must still increase that span; the metric must not mutate the rendered pixels or erase low-contrast notation.
+- [x] In `pipeline/score-image-normalizer.ts`, compute a non-destructive representative-quality record from the normalized crop: estimate the dominant neutral paper tone, measure staff/ink-relative vertical content independently of the absolute paper value, and retain paper luminance/ink contrast only for comparing duplicate captures. Do not lower `PAPER_CHANNEL_MIN` or globally whiten all gray pixels.
+- [x] In `pipeline/score-video-processor.ts`, store that quality record on `AcceptedScore` and replace the height-only `hasMeaningfullyMoreVerticalScoreContext` rule with an explicit comparator: prefer meaningfully larger real notation context; when content is equivalent, prefer the brighter/higher-contrast capture; when neither difference is meaningful, keep the existing representative.
+- [x] Preserve current contracts: duplicate identification and quality-report reasons remain unchanged; the existing delayed-title regression retains the more complete copy; changed notation remains distinct; page packing and PDF rendering receive the selected image without new processing branches.
+- [x] Prove RED/GREEN with exact focused commands: run `npm run build:test`, write `{"type":"commonjs"}` to `build-test/package.json` as the existing test script does, then run `node --test --test-name-pattern='clean representative|faded representative|more complete duplicate|neutral gray score paper|faded score identity' build-test/tests/pipeline-score-image-normalizer.test.js build-test/tests/pipeline-score-video-processor.test.js`. RED retained `score-0002.png` for `[clean,faded]` and `score-0001.png` for `[faded,clean]`; GREEN passed 6/6. `npm test` was rerun and `git diff --check` passed; unrelated existing test-environment failures remain recorded below.
+- [x] Rebuild with `npm run build:cli`, create `qa_dir=$(mktemp -d /tmp/yt2sheet-pDkESH-ItxQ.XXXXXX)`, and run `node dist-cli/cli/index.js "https://www.youtube.com/watch?v=pDkESH-ItxQ" --output "$qa_dir/result.pdf"`. The same two-page sequence now contains one white final measure-70 system, with no duplicate and no lost `slowly`, `small notes: 1961`, note, or pedal markings; remove the explicit QA directory after evidence is recorded.
+- [x] Render every regenerated PDF page with `pdfinfo "$qa_dir/result.pdf"`, `pdfimages -png "$qa_dir/result.pdf" "$qa_dir/embedded"`, and `pdftoppm -png -r 120 "$qa_dir/result.pdf" "$qa_dir/page"`. Both full pages and extracted page rasters were inspected: two pages, unchanged score order, white final system, and intact final markings.
+
+## Review
+
+- Confirmed source condition: the video fades during its final score. Clean frames 208/209 precede faded frame 210; frame 210's normalized paper median is 203.
+- Confirmed processing defect: `normalizeScoreImage` only whitens neutral pixels at 205 or above, while `findVerticalInkBounds` treats every pixel below 250 as foreground. The gray paper therefore becomes fake vertical content, inflating the crop from about 366/367px to 488px.
+- Confirmed selection defect: frames 209 and 210 are correctly classified as one `dominant-ink` score, but the 32.97% apparent height gain exceeds the 4% replacement threshold, so the gray duplicate replaces the clean representative.
+- Renderer/PDF ruled out: `score-0210.png` is already gray before `renderPage`; page composition and PDF embedding preserve it unchanged.
+- Runtime mismatch ruled out: the supplied and reproduced PDFs share SHA-256 `5c6129f842944122da9e0d37f953c5956c813795c5d678ccb2464af822e5f807`.
+- Toggle proof: the current isolated 209/210 pair retains `score-0002.png` (`1920x488`, median 203); disabling only representative replacement retains `score-0001.png` (`1920x367`, median 255).
+- Planned RED seam verified without editing tests: a 960x360 clean-paper fixture followed by identical notation on `rgb(203,203,203)` currently produces one `dominant-ink` duplicate but retains `score-0002.png` at median 203, so the first implementation-plan test will fail for the intended mechanism.
+- Scope decision: fix duplicate representative quality, not the PDF writer and not the global paper-whitening threshold. This keeps later legitimate titles/more-complete score context while preventing fade background from masquerading as notation.
+- No product source or tests were changed in this investigation.
+- Implementation: representative selection now measures paper-relative notation context and readability. It keeps true later additions (for example a delayed title), but chooses the brighter capture when notation context is equivalent.
+- Additional exact-video finding and fix: final frame 211 initially bypassed duplicate matching despite dHash 33/34 and equal staff gaps, because fade/noise reduced notation overlap to 53.9% (below 60%). A lower 50% overlap applies only when paper luminance differs by at least 40, preserving the original dHash and staff-gap gates.
+- Verification: focused regression suite passed 6/6; `npm run typecheck`, `npm run build:cli`, and `git diff --check` passed. `npm test` still has unrelated benchmark corpus-root fixture failures, macOS process-tree timing failures, a missing bundled `ffmpeg-static` executable, and Windows-path expectations on this macOS host.
+- Exact compiled-CLI QA: with existing `/Users/park/.pixi/bin` media tools supplied through one-command environment overrides, the user URL completed successfully to a two-page PDF. Both rendered pages were inspected; final measure 70 appeared once on white paper, retaining `slowly`, `small notes: 1961`, notes, and pedal markings.
+
+# G080 CLI experience improvement research (2026-08-04)
+
+## Plan
+
+- [x] Map the shipped `yt2` commands, runtime phases, errors, and output contracts.
+- [x] Compare the interaction model with relevant maintained open-source CLIs using primary documentation and source.
+- [x] Prioritize concrete CLI UX, progress, recovery, and documentation improvements with expected impact and implementation scope.
+
+## Review
+
+- No product code changed. Current `yt2` supports one YouTube URL, `--output`, `--cookies`, decimal `--start`/`--end`, help, uninstall, Ctrl-C cancellation, and collision-safe default PDF names. It reports one percentage stream but not named phases, hides normal pipeline logs, and provides no preflight, version/doctor, structured output, or persisted quality report.
+- Reference comparison used the maintained yt-dlp README (simulation, timestamps, progress controls, output events, verbose/configuration), rclone documentation (dry-run, stderr logging, log files and JSON Lines), GitHub CLI manuals (stable JSON and cancellation exit code), and uv command reference (TTY-aware color/progress controls). The recommended order is: phase-aware TTY-safe progress plus actionable errors; `inspect` preflight and `--version`/`doctor`; then machine-readable result/quality reports and time/output ergonomics.
+
+# G081 CLI time-range UX (2026-08-04)
+
+## Plan
+
+- [x] Add failing tests for `MM:SS(.fraction)` and `H:MM:SS` inputs while preserving decimal seconds, defaults, and half-open validation.
+- [x] Add a processor-to-CLI callback that exposes the duration-resolved `[start,end)` range before media download/extraction begins.
+- [x] Format the resolved range clearly and update CLI help and README examples without changing the existing range contract.
+- [x] Run focused red/green tests, typecheck, the full suite/build, and compiled CLI surface QA for the accepted forms and displayed range.
+
+## Review
+
+- Parser RED/GREEN: `01:23.5` and `1:02:03` initially returned the old decimal-only error, then parsed to `83.5` and `3723`; malformed seconds/minutes remain rejected.
+- Resolved-range RED/GREEN: the processor callback was initially empty, then emitted the explicit `[83.5,3723)` resolution before the fake download stage; CLI job forwarding and readable formatting are covered by focused tests.
+- CLI surface: compiled `yt2` with deterministic fake media tools printed `최종 해석 범위: [01:23.5, 1:02:03)` before `[2/6] 영상 다운로드 12%`; with omitted `--end`, it printed `[01:23.5, 1:06:40)` for the 4000-second fixture.
+- Validation: `npm run typecheck` and `npm run build:cli` passed. The focused range/job/processor set passed all new feature assertions; two existing macOS failures remain for Windows backslash path expectations. `npm run verify` also reports the pre-existing benchmark corpus-path, process-tree, missing bundled ffmpeg, and Windows-path failures.
+- Documentation and help now list decimal seconds, `MM:SS(.fraction)`, and `H:MM:SS`; `[start,end)` and omitted-bound defaults remain unchanged. No release or visual QA was requested or performed.
+
+# G082 CLI staged progress display (2026-08-04)
+
+## Plan
+
+- [x] Add a typed progress renderer that maps the existing pipeline percentage boundaries to six named stages.
+- [x] Render one-line updates for TTYs and stable newline-delimited stage events for redirected output.
+- [x] Route progress to stderr while keeping the final PDF completion line on stdout.
+- [x] Add focused progress/TTY/bootstrap regressions and document the output contract.
+- [x] Run CLI-focused tests, typecheck, CLI build, help smoke, and a real non-TTY failure-path smoke.
+
+## Review
+
+- Added `cli/progress.ts` with six stages: video information, download, frame extraction, score analysis, duplicate cleanup, and PDF generation. Existing numeric progress callbacks remain unchanged.
+- Interactive output redraws with a cleared terminal line; non-TTY output emits stable stage lines and avoids carriage-return log corruption. yt-dlp bootstrap output follows the same TTY/non-TTY policy.
+- Progress now uses stderr; successful completion remains on stdout, allowing shell consumers to capture the output path without progress noise.
+- Verification: CLI-focused tests passed 21/21 with one Windows-only uninstall test skipped by host permissions; typecheck and CLI build passed; compiled `yt2 --help` contains the progress contract; a real piped valid-URL failure emitted `[1/6] 영상 정보 확인 0%` and a failure on stderr with empty stdout.
+- The full suite remains non-green due unrelated existing platform/fixture failures (benchmark corpus path assumptions, process-tree liveness checks, missing local `ffmpeg-static` binary, and Windows-path assertions on this macOS host).
+
+# G083 Music notation and PDF standards applicability review (2026-08-04)
+
+## Plan
+
+- [x] Verify the official scope and status of MusicXML 4.0, SMuFL 1.4, ISO 32000-2:2020, and ISO 216:2007.
+- [x] Map each standard to the current video-to-score-image-to-PDF CLI pipeline and identify quality concerns the standards do not solve.
+- [x] Recommend a staged adoption and measurable acceptance criteria without changing product code.
+
+## Review
+
+- MusicXML 4.0 and SMuFL 1.4 are W3C-hosted Community Group Final Reports, not W3C Standards Track documents. They become directly useful only with structured notation recognition and re-engraving; XSD/font conformance alone does not prove musical correctness or visual quality.
+- The current CLI normalizes raster score crops, composes each page as PNG, and embeds that PNG in the PDF. ISO 216 can therefore improve the physical print contract now, while ISO 32000-2 governs the PDF container rather than crop, deduplication, completeness, or legibility.
+- The current PDF contract is 1200 x 1700 PDF points and 1200 x 1700 pixels at 72 DPI, physically about 423.3 x 599.7 mm, and the installed writer emits a `%PDF-1.7` header. A true A4 contract would use about 595.28 x 841.89 PDF points while retaining the raster at about 145 DPI.
+- Recommended order: first separate raster pixels from physical PDF units and adopt an ISO 216 page profile plus artifact checks; next define staff-space-based quality metrics for the captured images; only then consider an OMR -> MusicXML -> SMuFL-aware engraving -> vector PDF pipeline as a separate product capability.
+- No product code, tests, release, or runtime output was changed.
+
+# G084 Unified `yt2 doctor` diagnostics (2026-08-04)
+
+## Plan
+
+- [ ] Add red tests for `doctor` argument parsing, report formatting, and no-auto-install boundaries.
+- [ ] Implement side-effect-free tool/config/output checks plus temporary local media/PDF smoke checks.
+- [ ] Wire `yt2 doctor [youtube-url]` and `--offline` into the CLI with stable exit codes.
+- [ ] Run focused tests, typecheck, CLI build, and compiled `doctor --offline` smoke; record residual failures.
+
+## Review
+
+- Pending.

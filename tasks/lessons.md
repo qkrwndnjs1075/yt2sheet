@@ -126,3 +126,7 @@
 # 2026-08-01 - Regress media deduplication against the reported artifact shape
 
 - Do not treat a passing synthetic full-height opaque tracker fixture as proof for a live score-video duplicate report. First inspect the supplied artifact and make the regression fixture match the real marker/overlay geometry; otherwise a released mask can be present yet never execute for the production signal.
+
+# 2026-08-04 - Honor the requested local clone destination
+
+- When cloning a repository for the user, confirm the desired local destination before reporting completion; if corrected, move the existing complete clone rather than making a second copy, then verify its remote and revision at the requested location.
