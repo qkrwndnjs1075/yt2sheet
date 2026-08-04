@@ -80,6 +80,10 @@ it("maps timeout, cancellation, and misleading nonzero output without leaking lo
   // When: the first times out, the second is cancelled after spawn, and the third exits seven.
   const timedResult = await transcribeAudiverisPages({ ...timed.request, timeoutCeilingMs: 1_000 });
   const cancellation = transcribeAudiverisPages({ ...cancelled.request, signal: controller.signal, timeoutCeilingMs: 5_000 });
+  t.after(async () => {
+    controller.abort();
+    await cancellation;
+  });
   await waitForInvocationCount(cancelled.invocationPath, 2);
   controller.abort();
   const [cancelledResult, nonzeroResult] = await Promise.all([cancellation, transcribeAudiverisPages(nonzero.request)]);
@@ -99,6 +103,9 @@ it("maps timeout, cancellation, and misleading nonzero output without leaking lo
     ["audiveris-output", "stale.txt"],
     ["audiveris-output", "stale.txt"]
   ]);
+  const cancelledInvocations = await readInvocations(cancelled.invocationPath);
+  assert.equal(cancelledInvocations.length, 2);
+  t.diagnostic(JSON.stringify({ scenario: "audiveris-failure-harness", timedResult, cancelledResult, nonzeroResult, cancelledInvocationCount: cancelledInvocations.length }));
 });
 
 it("rejects malformed page names and nonmonotonic lineage before spawning Audiveris", async (t) => {

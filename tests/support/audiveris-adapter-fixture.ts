@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { watch } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,6 +9,7 @@ import type { AudiverisRequest } from "../../pipeline/audiveris-adapter";
 import { loadScoreRuntimeManifest } from "../../pipeline/score-runtime-manifest";
 
 const PLATFORM_ID = "macos-14-arm64" as const;
+const INVOCATION_READINESS_TIMEOUT_MS = 4_000;
 
 export type AudiverisFixture = {
   readonly request: AudiverisRequest;
@@ -75,13 +77,41 @@ export function sha256(value: Uint8Array): string {
 }
 
 export async function waitForInvocationCount(path: string, count: number): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      if ((await readInvocations(path)).length >= count) return;
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
-  throw new TypeError(`fixture invocation count did not reach ${count}`);
+  await new Promise<void>((resolve, reject) => {
+    const watcher = watch(dirname(path));
+    let settled = false;
+    let checking = false;
+    let pending = false;
+    const timer = setTimeout(() => finish(new TypeError(`fixture invocation count did not reach ${count}`)), INVOCATION_READINESS_TIMEOUT_MS);
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      watcher.close();
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const check = (): void => {
+      if (settled) return;
+      if (checking) {
+        pending = true;
+        return;
+      }
+      checking = true;
+      void readInvocations(path).then((invocations) => {
+        if (invocations.length >= count) finish();
+      }).catch((error: unknown) => {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) finish(error instanceof Error ? error : new Error(String(error)));
+      }).finally(() => {
+        checking = false;
+        if (pending) {
+          pending = false;
+          check();
+        }
+      });
+    };
+    watcher.on("change", check);
+    watcher.on("error", finish);
+    check();
+  });
 }
