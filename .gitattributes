@@ -1,0 +1,9 @@
+# Preserve imported MusicXML schemas and compliance font licenses verbatim.
+vendor/musicxml-4.0/container.xsd whitespace=-trailing-space
+vendor/musicxml-4.0/musicxml.xsd whitespace=-trailing-space
+vendor/musicxml-4.0/opus.xsd whitespace=-trailing-space
+vendor/musicxml-4.0/sounds.xsd whitespace=-trailing-space
+vendor/musicxml-4.0/xlink.xsd whitespace=-trailing-space
+vendor/musicxml-4.0/xml.xsd whitespace=-trailing-space
+tests/fixtures/third-party-compliance/bundle/THIRD_PARTY/fonts/Bravura-OFL.txt whitespace=-trailing-space
+tests/fixtures/third-party-compliance/bundle/THIRD_PARTY/fonts/Leland-LICENSE.txt whitespace=-trailing-space
