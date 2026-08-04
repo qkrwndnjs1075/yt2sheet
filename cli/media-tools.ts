@@ -41,7 +41,7 @@ async function resolveYtDlpPath(onInstallProgress?: YtDlpBootstrapProgressHandle
   }
 }
 
-async function resolvePackagedBinary(binary: "ffmpeg" | "ffprobe"): Promise<string> {
+export async function resolvePackagedBinary(binary: "ffmpeg" | "ffprobe"): Promise<string> {
   try {
     if (binary === "ffmpeg") {
       const installer = await import("ffmpeg-static");

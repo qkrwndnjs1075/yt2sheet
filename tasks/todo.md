@@ -2079,11 +2079,15 @@
 
 ## Plan
 
-- [ ] Add red tests for `doctor` argument parsing, report formatting, and no-auto-install boundaries.
-- [ ] Implement side-effect-free tool/config/output checks plus temporary local media/PDF smoke checks.
-- [ ] Wire `yt2 doctor [youtube-url]` and `--offline` into the CLI with stable exit codes.
-- [ ] Run focused tests, typecheck, CLI build, and compiled `doctor --offline` smoke; record residual failures.
+- [x] Add red tests for `doctor` argument parsing, report formatting, and no-auto-install boundaries.
+- [x] Implement side-effect-free tool/config/output checks plus temporary local media/PDF smoke checks.
+- [x] Wire `yt2 doctor [youtube-url]` and `--offline` into the CLI with stable exit codes.
+- [x] Run focused tests, typecheck, CLI build, and compiled `doctor --offline` smoke; record residual failures.
 
 ## Review
 
-- Pending.
+- Added a single `yt2 doctor [youtube-url]` command. It checks supported runtime, yt-dlp/ffmpeg/ffprobe/JS runtime execution, output-directory writability, optional cookie-file readability, a temporary ffmpeg -> ffprobe -> frame -> PDF smoke, and the yt-dlp release endpoint.
+- `--offline` skips network and source checks. A URL adds a download-free yt-dlp metadata/duration check. Doctor does not call the normal yt-dlp bootstrap and never reads browser cookies.
+- Human output uses PASS/WARN/FAIL/SKIP markers and exits `1` only for critical failures. Progress stages go to stderr; the final report goes to stdout.
+- Focused CLI/doctor tests passed 14/14; `npm run typecheck`, `npm run build:cli`, `npm run build:bundle`, and `git diff --check` passed. Configured-tool manual QA passed local media/PDF smoke and YouTube metadata (`1yCkz9VT3ZA`, 4:02); the current unconfigured checkout correctly exits `1` because bundled ffmpeg is missing and ffprobe is not executable.
+- The full `npm test` suite remains non-green on pre-existing benchmark corpus-root assumptions, macOS process-tree timing, missing bundled ffmpeg, and Windows-path assertions; new doctor tests pass.

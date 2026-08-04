@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { parseYouTubeVideoId } from "./youtube";
+import { parseDoctorArguments } from "./doctor-arguments";
 
 export type CliRunCommand = {
   readonly kind: "run";
@@ -14,8 +15,17 @@ export type CliRunCommand = {
   };
 };
 
+export type CliDoctorCommand = {
+  readonly kind: "doctor";
+  readonly videoUrl?: string;
+  readonly videoId?: string;
+  readonly cookiesPath?: string;
+  readonly offline?: true;
+};
+
 export type CliParseResult =
   | { readonly kind: "ok"; readonly command: CliRunCommand }
+  | { readonly kind: "doctor"; readonly command: CliDoctorCommand }
   | { readonly kind: "help" }
   | { readonly kind: "uninstall" }
   | { readonly kind: "error"; readonly message: string };
@@ -34,6 +44,10 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
     return args.length === 1
       ? { kind: "uninstall" }
       : { kind: "error", message: "uninstall 명령은 추가 인자를 받지 않습니다." };
+  }
+
+  if (args[0]?.trim() === "doctor") {
+    return parseDoctorArguments(args.slice(1), cwd);
   }
 
   let videoUrl: string | undefined;

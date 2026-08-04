@@ -3,6 +3,7 @@
 import { ScorePipelineError } from "../pipeline/job-contract";
 import { formatResolvedScoreTimeRange } from "../pipeline/score-time-range";
 import { parseCliArguments } from "./arguments";
+import { formatDoctorReport, runDoctor } from "./doctor";
 import { describeCliError, runCliJob } from "./job";
 import { formatCliUninstallOutcome, uninstallStandaloneCli } from "./uninstall";
 import { createCliProgressReporter, createYtDlpProgressReporter } from "./progress";
@@ -16,6 +17,7 @@ Usage:
 
 Commands:
   help                  Show this help message
+  doctor [youtube-url]  Diagnose the local install and optional YouTube source
   uninstall             Remove this standalone installation
 
 Options:
@@ -28,6 +30,8 @@ Options:
 Examples:
   yt2 "<youtube-url>"
   yt2 "<youtube-url>" --output ./scores/song.pdf
+  yt2 doctor
+  yt2 doctor "<youtube-url>" --offline
   yt2 help
 
 Terminal:
@@ -45,6 +49,11 @@ Output:
   Without --output, writes ./yt2sheet/yt2sheet-<videoId>.pdf in the current directory.
   Existing default files are preserved as yt2sheet-<videoId>-2.pdf, -3.pdf, and so on.
   Videos are processed locally on your computer.
+
+Doctor:
+  yt2 doctor checks the runtime, media tools, output directory, optional cookies,
+  a temporary local media/PDF smoke, and the yt-dlp release endpoint.
+  Add --offline to skip network checks. Doctor never installs tools or reads browser cookies.
 
 Progress:
   Interactive terminals redraw one staged progress line.
@@ -68,6 +77,21 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   if (parsed.kind === "uninstall") {
     try {
       process.stdout.write(formatCliUninstallOutcome(await uninstallStandaloneCli()));
+    } catch (error: unknown) {
+      process.stderr.write(`실패: ${describeCliError(error)}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (parsed.kind === "doctor") {
+    try {
+      const result = await runDoctor({
+        ...parsed.command,
+        cwd: process.cwd(),
+        onStage: (stage) => process.stderr.write(`[doctor ${stage.index}/${stage.total}] ${stage.label}\n`)
+      });
+      process.stdout.write(formatDoctorReport(result));
+      process.exitCode = result.exitCode;
     } catch (error: unknown) {
       process.stderr.write(`실패: ${describeCliError(error)}\n`);
       process.exitCode = 1;

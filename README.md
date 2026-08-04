@@ -55,6 +55,22 @@ For example, process from 1 minute 23.5 seconds through 1 hour 2 minutes 3 secon
 yt2 "https://www.youtube.com/watch?v=VIDEO_ID" --start 01:23.5 --end 1:02:03
 ```
 
+## Diagnose the installation
+
+Run one command to check the runtime, bundled media tools, output permissions, optional cookie configuration, and a temporary local video-to-frame-to-PDF smoke test:
+
+```sh
+yt2 doctor
+```
+
+To check a specific YouTube source without downloading its video, append the URL:
+
+```sh
+yt2 doctor "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Use `--offline` to skip release and YouTube network checks. Doctor never installs or updates tools and never reads browser cookies. A failed check exits with status `1`; warnings and skipped checks keep status `0`.
+
 ## Uninstall
 
 To remove a standalone installation, run:
