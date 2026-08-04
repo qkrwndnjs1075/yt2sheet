@@ -62,6 +62,7 @@ while [ -L "$script_path" ]; do
 done
 root=$(CDPATH= cd -- "$(dirname -- "$script_path")/.." && pwd)
 export YT_DLP_PATH="$root/tools/yt-dlp"
+export YT_DLP_JS_RUNTIME="$root/runtime/bin/node"
 exec "$root/runtime/bin/node" "$root/app/dist-cli/cli/index.js" "$@"
 `;
 }
@@ -71,6 +72,7 @@ function windowsLauncher() {
 setlocal EnableExtensions EnableDelayedExpansion
 set "YT2SHEET_ROOT=%~dp0.."
 set "YT_DLP_PATH=%YT2SHEET_ROOT%\\tools\\yt-dlp.exe"
+set "YT_DLP_JS_RUNTIME=%YT2SHEET_ROOT%\\runtime\\node.exe"
 if /I "%~1"=="uninstall" if "%~2"=="" goto uninstall
 set "YT2SHEET_UNINSTALL_HANDOFF="
 goto forward_args
@@ -102,12 +104,14 @@ function windowsPowerShellLauncher() {
 $node = Join-Path $root "runtime\\node.exe"
 $entry = Join-Path $root "app\\dist-cli\\cli\\index.js"
 $previousYtDlpPath = $env:YT_DLP_PATH
+$previousYtDlpJsRuntime = $env:YT_DLP_JS_RUNTIME
 $previousRoot = $env:YT2SHEET_ROOT
 $previousHandoff = $env:YT2SHEET_UNINSTALL_HANDOFF
 $exitCode = 0
 
 try {
   $env:YT_DLP_PATH = Join-Path $root "tools\\yt-dlp.exe"
+  $env:YT_DLP_JS_RUNTIME = $node
   $env:YT2SHEET_ROOT = $root
   if ($args.Count -eq 1 -and $args[0] -ieq "uninstall") {
     $env:YT2SHEET_UNINSTALL_HANDOFF = "launcher"
@@ -124,6 +128,7 @@ try {
   }
 } finally {
   $env:YT_DLP_PATH = $previousYtDlpPath
+  $env:YT_DLP_JS_RUNTIME = $previousYtDlpJsRuntime
   $env:YT2SHEET_ROOT = $previousRoot
   $env:YT2SHEET_UNINSTALL_HANDOFF = $previousHandoff
 }

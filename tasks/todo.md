@@ -2107,3 +2107,17 @@
 - The CLI build writes the package name and version into `dist-cli/package.json`, so the npm CLI and copied standalone bundle read the release version from their own distribution metadata.
 - README and `yt2 --help` document all three forms. `npm run typecheck`, the focused parser test, `npm run build:cli`, compiled command smoke checks, and `git diff --check` passed.
 - The full `npm test` run still has pre-existing benchmark corpus assumptions, macOS process-tree timing, missing local `ffmpeg-static` binary, and Windows-path expectation failures; the new version test passes.
+
+# G086 Bundled JS runtime propagation (2026-08-04)
+
+## Plan
+
+- [x] Reproduce the standalone bundle's `doctor --offline` behavior without a system `node` or `yt-dlp` on PATH.
+- [x] Update Unix, CMD, and PowerShell launchers to expose their embedded Node runtime as `YT_DLP_JS_RUNTIME` while restoring the caller's PowerShell environment.
+- [x] Add launcher contract assertions and verify typecheck, CLI/bundle builds, focused installer tests, and bundled-only doctor behavior.
+
+## Review
+
+- Public `cli-v0.2.17` installer QA exposed a real standalone-runtime defect: the launcher supplied bundled `YT_DLP_PATH`, but yt-dlp still received the literal `node` JS runtime. A clean PATH therefore made doctor fail even though the bundle contained Node.
+- `scripts/build-bundle.mjs` now exports the platform-specific bundled Node path for Unix and CMD launchers; the PowerShell launcher sets and restores `YT_DLP_JS_RUNTIME` alongside the existing environment values.
+- `npm run typecheck`, `npm run build:cli`, `npm run build:test`, `node --test build-test/tests/installer-scripts.test.js`, and `git diff --check` passed. The regenerated bundle reports the embedded runtime path and passes its JS-runtime check under a PATH without system Node; local ffmpeg/ffprobe packaging failures remain host-specific and pre-existing.

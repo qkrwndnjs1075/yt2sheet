@@ -33,11 +33,15 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(powershell, /if \(\$null -ne \$client\)/, "the raw installer must not call a method on a missing download client");
   assert.match(powershell, /LOCALAPPDATA is not available/, "the raw installer must report a missing Windows install location");
   assert.match(bundleBuilder, /YT2SHEET_UNINSTALL_HANDOFF=launcher/, "the Windows launcher must hand final root deletion to the exited batch process");
+  assert.match(bundleBuilder, /export YT_DLP_JS_RUNTIME=\"\$root\/runtime\/bin\/node\"/, "the Unix launcher must expose its bundled Node runtime to yt-dlp");
+  assert.match(bundleBuilder, /set \"YT_DLP_JS_RUNTIME=%YT2SHEET_ROOT%\\\\runtime\\\\node\.exe\"/, "the CMD launcher must expose its bundled Node runtime to yt-dlp");
   assert.match(bundleBuilder, /function windowsPowerShellLauncher\(\)/, "PowerShell must use a native script launcher so ampersands never cross cmd.exe parsing");
   assert.match(bundleBuilder, /writeFile\(join\(binRoot, "yt2\.ps1"\)/, "Windows bundles must install the PowerShell launcher beside the CMD launcher");
   assert.match(bundleBuilder, /& \$node \$entry @args/, "the PowerShell launcher must forward the original argument array");
   assert.match(bundleBuilder, /Start-Sleep -Milliseconds 250/, "the Windows launcher cleanup must wait for the launcher process to exit");
   assert.match(bundleBuilder, /Remove-Item -LiteralPath \$root -Recurse -Force/, "the Windows launcher must remove the bundle after the runtime exits");
+  assert.match(bundleBuilder, /\$env:YT_DLP_JS_RUNTIME = \$node/, "the PowerShell launcher must expose its bundled Node runtime to yt-dlp");
+  assert.match(bundleBuilder, /\$previousYtDlpJsRuntime/, "the PowerShell launcher must restore the caller's JS runtime environment");
   assert.match(readme, /irm https:\/\/raw\.githubusercontent\.com\/qkrwndnjs1075\/yt2sheet\/main\/scripts\/install\.ps1 \| iex/);
   assert.match(readme, /yt2 "https:\/\/www\.youtube\.com\/watch\?v=VIDEO_ID"/);
   assert.match(readme, /wrap the entire URL in double quotes/);
