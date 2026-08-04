@@ -32,6 +32,10 @@ export type ScoreTimeRangeResolution =
   | ResolvedScoreTimeRange
   | { readonly kind: "invalid"; readonly reason: ScoreTimeRangeResolutionReason };
 
+export function formatResolvedScoreTimeRange(timeRange: ResolvedScoreTimeRange): string {
+  return `[${formatTimecode(timeRange.startTimeSec)}, ${formatTimecode(timeRange.endTimeSec)})`;
+}
+
 export function resolveScoreTimeRange(
   timeRange: ScoreTimeRange | undefined,
   sourceDurationSec: number
@@ -80,4 +84,21 @@ export function resolveScoreTimeRange(
     hasStartBound,
     hasEndBound
   };
+}
+
+function formatTimecode(totalSeconds: number): string {
+  const roundedSeconds = Math.round(totalSeconds * 1_000_000_000) / 1_000_000_000;
+  const wholeSeconds = Math.floor(roundedSeconds);
+  const totalMinutes = Math.floor(wholeSeconds / 60);
+  const seconds = wholeSeconds % 60;
+  const fraction = roundedSeconds.toFixed(9).split(".")[1]?.replace(/0+$/, "") ?? "";
+  const secondsText = `${String(seconds).padStart(2, "0")}${fraction ? `.${fraction}` : ""}`;
+
+  if (totalMinutes >= 60) {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}:${String(minutes).padStart(2, "0")}:${secondsText}`;
+  }
+
+  return `${String(totalMinutes).padStart(2, "0")}:${secondsText}`;
 }

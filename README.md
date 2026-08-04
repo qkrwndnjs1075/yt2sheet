@@ -38,18 +38,21 @@ Without `--output`, the PDF is saved in a `yt2sheet` subfolder of the folder whe
 
 This is a local CLI and does not depend on Chrome or another browser. In macOS Terminal, PowerShell, and other shells, wrap the entire URL in double quotes so `?` and `&` reach `yt2` unchanged.
 
+While a PDF is being created, `yt2` shows six named stages: video information, download, frame extraction, score analysis, duplicate cleanup, and PDF generation. Interactive terminals redraw one line; redirected output receives stable stage lines on `stderr`, while the final completion path is written to `stdout`.
+
 ### Time range
 
-`--start` and `--end` are optional decimal seconds defining the half-open interval `[start,end)`.
+`--start` and `--end` accept decimal seconds, `MM:SS(.fraction)`, or `H:MM:SS` and define the half-open interval `[start,end)`.
 An omitted `--start` means `0`; an omitted `--end` means the video duration.
 The interval requires start < end (end must be greater than start).
 The range must fit the video duration: `start < duration` and `end <= duration`.
 Ranges outside the video duration are rejected before media processing starts.
+Before the media download begins, `yt2` prints the final duration-resolved interval.
 
-For example, process seconds 12.5 through 30 (excluding 30):
+For example, process from 1 minute 23.5 seconds through 1 hour 2 minutes 3 seconds (excluding the end):
 
 ```sh
-yt2 "https://www.youtube.com/watch?v=VIDEO_ID" --start 12.5 --end 30
+yt2 "https://www.youtube.com/watch?v=VIDEO_ID" --start 01:23.5 --end 1:02:03
 ```
 
 ## Uninstall

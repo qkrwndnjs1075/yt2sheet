@@ -56,7 +56,7 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
     const outputPath = join(resultDirectory, `yt2sheet-result-p${process.pid}-${runId}.pdf`);
     const sidecarPath = deriveScoreQualitySidecarPath(outputPath);
     const sidecarTemporaryPath = `${sidecarPath}.${randomUUID()}.tmp`;
-    const { onProgress, signal } = context;
+    const { onProgress, onTimeRangeResolved, signal } = context;
     let failed = false;
     let pdfArtifact: OwnedArtifact | null = null;
     let sidecarArtifact: OwnedArtifact | null = null;
@@ -67,8 +67,9 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       await Promise.all([mkdir(frameDirectory, { recursive: true }), mkdir(resultDirectory, { recursive: true })]);
       throwIfCancelled(signal);
       const remoteDuration = await this.readRemoteDuration(input.videoUrl, signal);
-      this.resolveTimeRange(input.timeRange, remoteDuration);
+      const remoteTimeRange = this.resolveTimeRange(input.timeRange, remoteDuration);
       throwIfCancelled(signal);
+      onTimeRangeResolved?.(remoteTimeRange);
       onProgress(12);
       throwIfCancelled(signal);
       const videoPath = await this.downloadVideo(input.videoId, input.videoUrl, workDirectory, signal);

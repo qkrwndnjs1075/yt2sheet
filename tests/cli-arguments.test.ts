@@ -62,6 +62,37 @@ test("parses separated and attached time-range options", () => {
   });
 });
 
+test("parses MM:SS and H:MM:SS timecodes into seconds", () => {
+  const result = parseCliArguments([
+    "--start",
+    "01:23.5",
+    "--end=1:02:03",
+    "https://youtu.be/1yCkz9VT3ZA"
+  ], "C:/work");
+
+  assert.deepEqual(result, {
+    kind: "ok",
+    command: {
+      kind: "run",
+      videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+      videoId: "1yCkz9VT3ZA",
+      outputPath: resolve("C:/work", "yt2sheet", "yt2sheet-1yCkz9VT3ZA.pdf"),
+      timeRange: {
+        startTimeSec: 83.5,
+        endTimeSec: 3723
+      }
+    }
+  });
+});
+
+test("rejects malformed or out-of-range timecodes", () => {
+  const invalidValues = ["1:60", "1:02:60", "1:2:03", "1:02:03:04"];
+
+  for (const value of invalidValues) {
+    assert.equal(parseCliArguments([`--start=${value}`, "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
+  }
+});
+
 test("preserves only the supplied time-range property", () => {
   const startOnly = parseCliArguments([
     "--start=0",
@@ -128,11 +159,11 @@ test("rejects malformed, duplicate, and inverted time ranges", () => {
 
   assert.deepEqual(parseCliArguments(startEmptyAttachedArgs, "C:/work"), {
     kind: "error",
-    message: "--start requires a decimal number."
+    message: "--start requires decimal seconds, MM:SS(.fraction), or H:MM:SS."
   });
   assert.deepEqual(parseCliArguments(endEmptyAttachedArgs, "C:/work"), {
     kind: "error",
-    message: "--end requires a decimal number."
+    message: "--end requires decimal seconds, MM:SS(.fraction), or H:MM:SS."
   });
   assert.equal(parseCliArguments(["--start= 1", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
   assert.equal(parseCliArguments(["--start", " 1 ", "https://youtu.be/1yCkz9VT3ZA"], "C:/work").kind, "error");
@@ -155,6 +186,40 @@ test("recognizes the standalone uninstall command without accepting extra argume
     kind: "error",
     message: "uninstall 명령은 추가 인자를 받지 않습니다."
   });
+});
+
+test("parses the unified doctor command with offline and source options", () => {
+  assert.deepEqual(parseCliArguments(["doctor"], "C:/work"), {
+    kind: "doctor",
+    command: { kind: "doctor" }
+  });
+  assert.deepEqual(parseCliArguments(["doctor", "--offline"], "C:/work"), {
+    kind: "doctor",
+    command: { kind: "doctor", offline: true }
+  });
+  assert.deepEqual(parseCliArguments([
+    "doctor",
+    "--cookies",
+    "private/cookies.txt",
+    "https://youtu.be/1yCkz9VT3ZA"
+  ], "C:/work"), {
+    kind: "doctor",
+    command: {
+      kind: "doctor",
+      videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+      videoId: "1yCkz9VT3ZA",
+      cookiesPath: resolve("C:/work", "private/cookies.txt")
+    }
+  });
+});
+
+test("rejects doctor options that could be mistaken for a normal run", () => {
+  assert.deepEqual(parseCliArguments(["doctor", "--start", "1"], "C:/work"), {
+    kind: "error",
+    message: "doctor 명령에서는 --start/--end를 사용할 수 없습니다."
+  });
+  assert.equal(parseCliArguments(["doctor", "https://youtu.be/1yCkz9VT3ZA", "https://youtu.be/2yCkz9VT3ZA"], "C:/work").kind, "error");
+  assert.equal(parseCliArguments(["doctor", "not-a-youtube-url"], "C:/work").kind, "error");
 });
 
 test("rejects invalid or incomplete arguments", () => {

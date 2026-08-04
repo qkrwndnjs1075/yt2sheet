@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { createScoreExtractionQualityReport, deriveScoreQualitySidecarPath, type ScoreExtractionQualityReport } from "../pipeline/score-quality-report";
 import { ScorePipelineError, type ScoreJobProcessorContext } from "../pipeline/job-contract";
+import type { ResolvedScoreTimeRange } from "../pipeline/score-time-range";
 import { buildFrameExtractionArguments, buildVideoDownloadArguments, YouTubeScoreProcessor } from "../pipeline/youtube-score-processor";
 
 describe("YouTube score frame extraction", () => {
@@ -80,6 +81,52 @@ describe("YouTube score frame extraction", () => {
 });
 
 describe("YouTube score time ranges", () => {
+  it("reports the resolved range before downloading media", async (t) => {
+    // Given: a requested time range and remote/local duration metadata.
+    const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-range-display-");
+    const observedRanges: ResolvedScoreTimeRange[] = [];
+    let downloadStarted = false;
+    let callbackBeforeDownload = false;
+    const processor = new YouTubeScoreProcessor({
+      dataRoot,
+      tools: { ytDlp: "yt-dlp-test", ffmpeg: "ffmpeg-test", ffprobe: "ffprobe-test" },
+      processRunner: async (executable, args) => {
+        if (executable === "yt-dlp-test" && args.includes("--skip-download")) return "4000";
+        if (executable === "yt-dlp-test") {
+          downloadStarted = true;
+          return args[args.indexOf("-o") + 1]?.replace("%(ext)s", "mp4") ?? "";
+        }
+        if (executable === "ffprobe-test") return "4000";
+        return "";
+      },
+      frameLister: async () => ["frame.png"],
+      pdfCreator: async (_frames, _workspace, outputPath) => {
+        await writeFile(outputPath, "%PDF-test");
+        return { pageCount: 1, scoreCount: 1 };
+      }
+    });
+
+    // When: processing resolves the range with a CLI callback.
+    await processor.process(
+      { ...jobInput(), timeRange: { startTimeSec: 83.5, endTimeSec: 3723 } },
+      createContext(new AbortController().signal, (range) => {
+        observedRanges.push(range);
+        callbackBeforeDownload ||= !downloadStarted;
+      })
+    );
+
+    // Then: the duration-resolved half-open range is available before download.
+    assert.deepEqual(observedRanges, [{
+      kind: "explicit",
+      startTimeSec: 83.5,
+      endTimeSec: 3723,
+      sampleDurationSec: 3639.5,
+      hasStartBound: true,
+      hasEndBound: true
+    }]);
+    assert.equal(callbackBeforeDownload, true);
+  });
+
   it("rejects a range outside remote duration before download or FFmpeg", async (t) => {
     // Given: a remote duration shorter than the requested end bound.
     const dataRoot = await createTempDirectory(t, "yt2sheet-youtube-remote-range-");
@@ -597,9 +644,12 @@ function jobInput() {
   };
 }
 
-function createContext(signal: AbortSignal): ScoreJobProcessorContext {
+function createContext(
+  signal: AbortSignal,
+  onTimeRangeResolved?: (range: ResolvedScoreTimeRange) => void
+): ScoreJobProcessorContext {
   const onProgress = (_progress: number): void => undefined;
-  return Object.assign(onProgress, { onProgress, signal });
+  return Object.assign(onProgress, { onProgress, signal, onTimeRangeResolved });
 }
 
 async function createTempDirectory(t: TestContext, prefix: string): Promise<string> {

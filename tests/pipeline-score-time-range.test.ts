@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resolveScoreTimeRange } from "../pipeline/score-time-range";
+import { formatResolvedScoreTimeRange, resolveScoreTimeRange } from "../pipeline/score-time-range";
 
 describe("score time range resolver", () => {
   it("rejects non-finite and nonpositive source durations before resolving a range", () => {
@@ -174,5 +174,21 @@ describe("score time range resolver", () => {
       hasStartBound: false,
       hasEndBound: true
     });
+  });
+
+  it("formats resolved ranges as readable timecodes", () => {
+    // Given
+    const result = resolveScoreTimeRange({ startTimeSec: 83.5, endTimeSec: 3723 }, 4_000);
+    if (result.kind === "invalid") assert.fail(`fixture range failed to resolve: ${result.reason}`);
+
+    // When
+    const formatted = formatResolvedScoreTimeRange(result);
+
+    // Then
+    assert.equal(formatted, "[01:23.5, 1:02:03)");
+
+    const fullRange = resolveScoreTimeRange(undefined, 4_000);
+    if (fullRange.kind === "invalid") assert.fail(`fixture range failed to resolve: ${fullRange.reason}`);
+    assert.equal(formatResolvedScoreTimeRange(fullRange), "[00:00, 1:06:40)");
   });
 });

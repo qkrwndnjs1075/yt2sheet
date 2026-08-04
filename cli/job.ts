@@ -7,7 +7,7 @@ import {
   type ScoreJobProcessor,
   type ScoreJobProcessorContext
 } from "../pipeline/job-contract";
-import type { ScoreTimeRange } from "../pipeline/score-time-range";
+import type { ResolvedScoreTimeRange, ScoreTimeRange } from "../pipeline/score-time-range";
 import { resolveCliMediaTools } from "./media-tools";
 import type { YtDlpBootstrapProgressHandler } from "./yt-dlp-bootstrap";
 
@@ -20,6 +20,7 @@ export type CliJobOptions = {
   readonly timeRange?: ScoreTimeRange;
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: number) => void;
+  readonly onTimeRangeResolved?: (timeRange: ResolvedScoreTimeRange) => void;
   readonly onInstallProgress?: YtDlpBootstrapProgressHandler;
   readonly tools?: MediaTools;
   readonly toolValidator?: (tools: MediaTools) => Promise<void>;
@@ -51,7 +52,7 @@ export async function runCliJob(options: CliJobOptions): Promise<CliJobResult> {
         videoUrl: options.videoUrl,
         ...(options.timeRange === undefined ? {} : { timeRange: options.timeRange })
       },
-      createProcessorContext(options.signal, options.onProgress)
+      createProcessorContext(options.signal, options.onProgress, options.onTimeRangeResolved)
     );
 
     await mkdir(dirname(outputPath), { recursive: true });
@@ -105,11 +106,13 @@ function createMediaTools(options: CliJobOptions): MediaTools {
 
 function createProcessorContext(
   signal: AbortSignal | undefined,
-  onProgress: ((progress: number) => void) | undefined
+  onProgress: ((progress: number) => void) | undefined,
+  onTimeRangeResolved: ((timeRange: ResolvedScoreTimeRange) => void) | undefined
 ): ScoreJobProcessorContext {
   const progressHandler = onProgress ?? (() => undefined);
   return Object.assign(progressHandler, {
     onProgress: progressHandler,
+    onTimeRangeResolved,
     signal: signal ?? new AbortController().signal
   });
 }

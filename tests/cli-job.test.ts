@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseCliArguments } from "../cli/arguments";
 import { runCliJob } from "../cli/job";
 import type { ScoreJobInput } from "../pipeline/job-contract";
+import type { ResolvedScoreTimeRange } from "../pipeline/score-time-range";
 
 test("runs a processor and copies only its PDF to the requested path", async () => {
   let dataRoot = "";
@@ -138,4 +139,36 @@ test("forwards an optional time range to the processor input without adding an a
       timeRange: { startTimeSec: 12.5, endTimeSec: 30 }
     }
   ]);
+});
+
+test("forwards the resolved-range callback through the CLI job context", async () => {
+  const observedRanges: ResolvedScoreTimeRange[] = [];
+  const resolvedRange: ResolvedScoreTimeRange = {
+    kind: "explicit",
+    startTimeSec: 83.5,
+    endTimeSec: 3723,
+    sampleDurationSec: 3639.5,
+    hasStartBound: true,
+    hasEndBound: true
+  };
+
+  await runCliJob({
+    videoId: "1yCkz9VT3ZA",
+    videoUrl: "https://youtu.be/1yCkz9VT3ZA",
+    outputPath: "build-test/cli-output/time-range-callback.pdf",
+    overwriteOutput: true,
+    onTimeRangeResolved: (range) => observedRanges.push(range),
+    tools: { ytDlp: process.execPath, ffmpeg: process.execPath, ffprobe: process.execPath },
+    toolValidator: async () => undefined,
+    processorFactory: ({ dataRoot }) => ({
+      async process(_input: ScoreJobInput, context): Promise<{ readonly filePath: string; readonly pageCount: number }> {
+        context.onTimeRangeResolved?.(resolvedRange);
+        const filePath = resolve(dataRoot, "result.pdf");
+        await writeFile(filePath, "%PDF-test", "utf8");
+        return { filePath, pageCount: 1 };
+      }
+    })
+  });
+
+  assert.deepEqual(observedRanges, [resolvedRange]);
 });

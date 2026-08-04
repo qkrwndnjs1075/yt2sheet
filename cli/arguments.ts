@@ -21,6 +21,9 @@ export type CliParseResult =
   | { readonly kind: "error"; readonly message: string };
 
 const DECIMAL_SECONDS_PATTERN = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+const MINUTES_SECONDS_PATTERN = /^([0-9]+):([0-5][0-9](?:\.[0-9]+)?)$/;
+const HOURS_MINUTES_SECONDS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9](?:\.[0-9]+)?)$/;
+const TIME_RANGE_VALUE_MESSAGE = "decimal seconds, MM:SS(.fraction), or H:MM:SS";
 
 export function parseCliArguments(args: readonly string[], cwd = process.cwd()): CliParseResult {
   if (args.length === 0 || args[0]?.trim() === "help") {
@@ -85,13 +88,13 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
         ? timeRangeOption.value
         : readNextTimeRangeValue(args, index);
       if (rawValue === null || rawValue === "") {
-        return { kind: "error", message: `${timeRangeOption.name} requires a decimal number.` };
+        return { kind: "error", message: `${timeRangeOption.name} requires ${TIME_RANGE_VALUE_MESSAGE}.` };
       }
       if (!timeRangeOption.attached) index += 1;
 
       const parsedValue = parseSeconds(rawValue);
       if (parsedValue === undefined) {
-        return { kind: "error", message: `${timeRangeOption.name} requires a decimal number.` };
+        return { kind: "error", message: `${timeRangeOption.name} requires ${TIME_RANGE_VALUE_MESSAGE}.` };
       }
       if (timeRangeOption.name === "--start") startTimeSec = parsedValue;
       else endTimeSec = parsedValue;
@@ -146,8 +149,26 @@ export function parseCliArguments(args: readonly string[], cwd = process.cwd()):
 }
 
 function parseSeconds(value: string): number | undefined {
-  if (!DECIMAL_SECONDS_PATTERN.test(value)) return undefined;
-  const parsedValue = Number(value);
+  if (DECIMAL_SECONDS_PATTERN.test(value)) {
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : undefined;
+  }
+
+  const minutesSecondsMatch = MINUTES_SECONDS_PATTERN.exec(value);
+  if (minutesSecondsMatch) {
+    return parseTimecodeParts("0", minutesSecondsMatch[1], minutesSecondsMatch[2]);
+  }
+
+  const hoursMinutesSecondsMatch = HOURS_MINUTES_SECONDS_PATTERN.exec(value);
+  if (hoursMinutesSecondsMatch) {
+    return parseTimecodeParts(hoursMinutesSecondsMatch[1], hoursMinutesSecondsMatch[2], hoursMinutesSecondsMatch[3]);
+  }
+
+  return undefined;
+}
+
+function parseTimecodeParts(hoursText: string, minutesText: string, secondsText: string): number | undefined {
+  const parsedValue = Number(hoursText) * 3_600 + Number(minutesText) * 60 + Number(secondsText);
   return Number.isFinite(parsedValue) ? parsedValue : undefined;
 }
 

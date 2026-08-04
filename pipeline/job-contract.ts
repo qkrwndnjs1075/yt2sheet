@@ -1,4 +1,4 @@
-import type { ScoreTimeRange } from "./score-time-range";
+import type { ResolvedScoreTimeRange, ScoreTimeRange } from "./score-time-range";
 
 export type ScoreJobInput = {
   readonly videoId: string;
@@ -13,6 +13,7 @@ export type ScoreJobResult = {
 
 export type ScoreJobProcessorContext = ((progress: number) => void) & {
   readonly onProgress: (progress: number) => void;
+  readonly onTimeRangeResolved?: (timeRange: ResolvedScoreTimeRange) => void;
   readonly signal: AbortSignal;
 };
 
