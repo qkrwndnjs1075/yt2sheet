@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { transcribeAudiverisPages } from "../pipeline/audiveris-adapter";
-import { audiverisFixture, readInvocations, setVersionStderr, waitForInvocationCount } from "./support/audiveris-adapter-fixture";
+import { audiverisFixture, readInvocations, setVersionDelay, setVersionStderr, waitForInvocationCount } from "./support/audiveris-adapter-fixture";
 
 it("rejects zero, duplicate, and traversal MXL outputs without exposing candidates", async (t) => {
   // Given: tools that emit zero candidates, two candidates, or one candidate outside the output directory.
@@ -108,6 +108,25 @@ it("maps timeout, cancellation, and misleading nonzero output without leaking lo
   t.diagnostic(JSON.stringify({ scenario: "audiveris-failure-harness", timedResult, cancelledResult, nonzeroResult, cancelledInvocationCount: cancelledInvocations.length }));
 });
 
+it("preserves the first source page lineage when the Audiveris probe times out", async (t) => {
+  // Given: an approved first page and a pinned executable whose version probe exceeds the request ceiling.
+  const fixture = await audiverisFixture(t, ["valid"]);
+  await setVersionDelay(fixture, 2_000);
+  const requestSnapshot = JSON.stringify(fixture.request.pages);
+
+  // When: the probe times out before any page command can start.
+  const result = await transcribeAudiverisPages({ ...fixture.request, timeoutCeilingMs: 1_000 });
+
+  // Then: the fallback retains the affected source page and the caller-owned lineage remains unchanged.
+  const invocations = await readInvocations(fixture.invocationPath);
+  const residue = await readdir(fixture.workspaceRoot);
+  t.diagnostic(JSON.stringify({ scenario: "audiveris-probe-timeout-lineage", requestPageNumber: fixture.request.pages[0]?.lineage.pageNumber, result, invocations, residue, requestUnchanged: JSON.stringify(fixture.request.pages) === requestSnapshot }));
+  assert.deepEqual(invocations, [["-version"]]);
+  assert.deepEqual(residue, ["audiveris-output", "stale.txt"]);
+  assert.equal(JSON.stringify(fixture.request.pages), requestSnapshot);
+  assert.deepEqual(result, { kind: "raster-fallback", warning: { pageNumber: 1, code: "OMR_TIMEOUT", evidence: { timeoutMs: 1_000 } } });
+});
+
 it("rejects malformed page names and nonmonotonic lineage before spawning Audiveris", async (t) => {
   // Given: an approved-page request whose second lineage repeats page one.
   const fixture = await audiverisFixture(t, ["valid", "valid"]);
@@ -139,5 +158,5 @@ it("rejects malformed page paths and a missing manifest executable before candid
 
   // Then: neither request exposes a candidate and each reports its exact fallback class.
   assert.deepEqual(malformedResult, { kind: "raster-fallback", warning: { pageNumber: 1, code: "STRUCTURED_LINEAGE_MISMATCH", evidence: { expectedPageNumber: 1, actualPageNumber: 0 } } });
-  assert.deepEqual(missingToolResult, { kind: "raster-fallback", warning: { pageNumber: null, code: "OMR_UNAVAILABLE", evidence: { tool: "audiveris", versionProbe: "SCORE_TOOL_SPAWN_FAILED" } } });
+  assert.deepEqual(missingToolResult, { kind: "raster-fallback", warning: { pageNumber: 1, code: "OMR_UNAVAILABLE", evidence: { tool: "audiveris", versionProbe: "SCORE_TOOL_SPAWN_FAILED" } } });
 });

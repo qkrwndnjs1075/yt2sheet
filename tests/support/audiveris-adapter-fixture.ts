@@ -72,6 +72,12 @@ export async function setVersionStderr(fixture: AudiverisFixture, value: string)
   await writeFile(join(dirname(join(fixture.request.runtimeRoot, platform.runtimes.audiveris.stagedExecutable)), "version-stderr.txt"), value);
 }
 
+export async function setVersionDelay(fixture: AudiverisFixture, milliseconds: number): Promise<void> {
+  const platform = fixture.request.manifest.platforms.find(({ id }) => id === fixture.request.platformId);
+  if (platform === undefined) throw new TypeError("fixture platform absent");
+  await writeFile(join(dirname(join(fixture.request.runtimeRoot, platform.runtimes.audiveris.stagedExecutable)), "version-delay-ms.txt"), String(milliseconds));
+}
+
 export function sha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }

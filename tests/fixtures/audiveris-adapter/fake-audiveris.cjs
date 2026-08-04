@@ -5,6 +5,11 @@ const path = require("node:path");
 const args = process.argv.slice(2);
 fs.appendFileSync(path.join(__dirname, "invocations.jsonl"), `${JSON.stringify(args)}\n`);
 if (args.length === 1 && args[0] === "-version") {
+  const delayPath = path.join(__dirname, "version-delay-ms.txt");
+  if (fs.existsSync(delayPath)) {
+    const delayMs = Number(fs.readFileSync(delayPath, "utf8"));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+  }
   process.stdout.write(fs.readFileSync(path.join(__dirname, "version.txt"), "utf8"));
   const stderrVersion = path.join(__dirname, "version-stderr.txt");
   if (fs.existsSync(stderrVersion)) process.stderr.write(fs.readFileSync(stderrVersion, "utf8"));

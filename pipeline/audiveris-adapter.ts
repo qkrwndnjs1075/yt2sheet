@@ -61,6 +61,8 @@ class AudiverisCollectionError extends Error {
 export async function transcribeAudiverisPages(request: AudiverisRequest): Promise<AudiverisResult> {
   const pageWarning = await validatePages(request.pages);
   if (pageWarning !== null) return fallback(pageWarning);
+  const firstPage = request.pages[0];
+  if (firstPage === undefined) throw new TypeError("validated Audiveris pages absent");
   const platform = request.manifest.platforms.find(({ id }) => id === request.platformId);
   if (platform === undefined || !isAbsolute(request.runtimeRoot)) {
     return unavailable("manifest-executable-unresolved");
@@ -77,7 +79,7 @@ export async function transcribeAudiverisPages(request: AudiverisRequest): Promi
     timeoutCeilingMs: request.timeoutCeilingMs,
     signal: request.signal
   });
-  if (!probe.ok) return fallback(toolWarning(probe, null, request));
+  if (!probe.ok) return fallback(toolWarning(probe, firstPage.lineage.pageNumber, request));
   const stdoutVersion = probe.stdout.trim();
   const stderrVersion = probe.stderr.trim();
   if (runtime.versionProbe.expected !== AUDIVERIS_VERSION || stdoutVersion !== AUDIVERIS_VERSION || stderrVersion.length !== 0) {
