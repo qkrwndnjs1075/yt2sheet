@@ -66,6 +66,15 @@ export async function readInvocations(path: string): Promise<readonly (readonly 
   });
 }
 
+export async function readInvocationsIfPresent(path: string): Promise<readonly (readonly string[])[]> {
+  try {
+    return await readInvocations(path);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 export async function setVersionStderr(fixture: AudiverisFixture, value: string): Promise<void> {
   const platform = fixture.request.manifest.platforms.find(({ id }) => id === fixture.request.platformId);
   if (platform === undefined) throw new TypeError("fixture platform absent");

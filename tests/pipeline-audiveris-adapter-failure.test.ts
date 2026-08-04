@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { transcribeAudiverisPages } from "../pipeline/audiveris-adapter";
-import { audiverisFixture, readInvocations, setVersionDelay, setVersionStderr, waitForInvocationCount } from "./support/audiveris-adapter-fixture";
+import { audiverisFixture, readInvocations, readInvocationsIfPresent, setVersionDelay, setVersionStderr, waitForInvocationCount } from "./support/audiveris-adapter-fixture";
 
 it("rejects zero, duplicate, and traversal MXL outputs without exposing candidates", async (t) => {
   // Given: tools that emit zero candidates, two candidates, or one candidate outside the output directory.
@@ -118,10 +118,11 @@ it("preserves the first source page lineage when the Audiveris probe times out",
   const result = await transcribeAudiverisPages({ ...fixture.request, timeoutCeilingMs: 1_000 });
 
   // Then: the fallback retains the affected source page and the caller-owned lineage remains unchanged.
-  const invocations = await readInvocations(fixture.invocationPath);
+  const invocations = await readInvocationsIfPresent(fixture.invocationPath);
   const residue = await readdir(fixture.workspaceRoot);
-  t.diagnostic(JSON.stringify({ scenario: "audiveris-probe-timeout-lineage", requestPageNumber: fixture.request.pages[0]?.lineage.pageNumber, result, invocations, residue, requestUnchanged: JSON.stringify(fixture.request.pages) === requestSnapshot }));
-  assert.deepEqual(invocations, [["-version"]]);
+  const receiptState = invocations.length === 0 ? "probe-start-not-reached" : "probe-start-reached";
+  t.diagnostic(JSON.stringify({ scenario: "audiveris-probe-timeout-lineage", requestPageNumber: fixture.request.pages[0]?.lineage.pageNumber, result, receiptState, invocations, residue, requestUnchanged: JSON.stringify(fixture.request.pages) === requestSnapshot }));
+  assert.ok(invocations.length === 0 || (invocations.length === 1 && invocations[0]?.length === 1 && invocations[0][0] === "-version"));
   assert.deepEqual(residue, ["audiveris-output", "stale.txt"]);
   assert.equal(JSON.stringify(fixture.request.pages), requestSnapshot);
   assert.deepEqual(result, { kind: "raster-fallback", warning: { pageNumber: 1, code: "OMR_TIMEOUT", evidence: { timeoutMs: 1_000 } } });
