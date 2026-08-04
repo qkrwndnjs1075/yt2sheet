@@ -2,6 +2,8 @@ import { runProcess, type MediaTools } from "../pipeline/media-tools";
 import { resolvePackagedBinary } from "./media-tools";
 import type { DoctorCheck } from "./doctor-contract";
 
+const YT_DLP_DOCTOR_TIMEOUT_MS = 20_000;
+
 export type DoctorTooling = {
   readonly tools: MediaTools;
   readonly checks: readonly DoctorCheck[];
@@ -42,10 +44,17 @@ export async function inspectDoctorTools(cookiesPath?: string): Promise<DoctorTo
 async function inspectYtDlp(): Promise<ExecutableCheck> {
   const configuredPath = process.env.YT_DLP_PATH?.trim();
   if (configuredPath) {
-    return inspectExecutable("yt-dlp", configuredPath, ["--version"], "환경 변수 YT_DLP_PATH", "실행할 수 없습니다.");
+    return inspectExecutable(
+      "yt-dlp",
+      configuredPath,
+      ["--version"],
+      "환경 변수 YT_DLP_PATH",
+      "실행할 수 없습니다.",
+      YT_DLP_DOCTOR_TIMEOUT_MS
+    );
   }
   try {
-    const version = summarizeVersion(await runProcess("yt-dlp", ["--version"], { timeoutMs: 5_000 }));
+    const version = summarizeVersion(await runProcess("yt-dlp", ["--version"], { timeoutMs: YT_DLP_DOCTOR_TIMEOUT_MS }));
     return {
       path: "yt-dlp",
       available: true,
@@ -99,10 +108,11 @@ async function inspectExecutable(
   executable: string,
   args: readonly string[],
   source: string,
-  failureSuffix: string
+  failureSuffix: string,
+  timeoutMs = 5_000
 ): Promise<ExecutableCheck> {
   try {
-    const output = summarizeVersion(await runProcess(executable, args, { timeoutMs: 5_000 }));
+    const output = summarizeVersion(await runProcess(executable, args, { timeoutMs }));
     return {
       path: executable,
       available: true,
