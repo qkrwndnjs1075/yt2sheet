@@ -1,13 +1,13 @@
-# Release cli-v0.2.20 (2026-08-05)
+# Release cli-v0.2.21 (2026-08-05)
 
 ## Plan
 
-- [x] Prepare the 0.2.20 patch version and release-fix worktree while preserving local PDF/npm artifacts.
+- [x] Prepare the 0.2.21 patch version and release-fix worktree while preserving local PDF/npm artifacts.
 - [x] Diagnose the failed cli-v0.2.19 workflow on a clean checkout.
 - [x] Fix Linux runtime target selection, generated-corpus setup, and benchmark media dependencies.
 - [x] Run the release verification and exact package/CLI smoke checks.
 - [ ] Commit the reviewed source, tests, workflow, and task evidence.
-- [ ] Push the branch, merge the PR, and push the cli-v0.2.20 tag.
+- [ ] Push the branch, merge the PR, and push the cli-v0.2.21 tag.
 - [ ] Confirm the GitHub release assets and the installed user path.
 
 ## Review
