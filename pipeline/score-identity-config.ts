@@ -27,6 +27,17 @@ export const STANDALONE_SCORE_PDF = {
   targetDpi: 145.14
 } as const satisfies ScorePdfContract;
 
+const POINTS_PER_INCH = 72;
+const MILLIMETRES_PER_INCH = 25.4;
+const OMR_REVIEW_DPI = 300;
+
+export const OMR_REVIEW_PAGE_LAYOUT = {
+  rasterWidth: Math.round(STANDALONE_SCORE_PDF.pdfPageWidthPoints / POINTS_PER_INCH * OMR_REVIEW_DPI),
+  rasterHeight: Math.round(STANDALONE_SCORE_PDF.pdfPageHeightPoints / POINTS_PER_INCH * OMR_REVIEW_DPI),
+  contentMarginPixels: Math.round(STANDALONE_SCORE_PDF.contentMarginMillimetres / MILLIMETRES_PER_INCH * OMR_REVIEW_DPI),
+  interSheetGapPixels: Math.round(STANDALONE_SCORE_PDF.interSheetGapMillimetres / MILLIMETRES_PER_INCH * OMR_REVIEW_DPI)
+} as const satisfies ScoreRasterPageLayout;
+
 export const SCORE_PDF_METADATA = {
   subject: "Score sheets extracted from user-supplied video",
   keywords: ["yt2sheet", "sheet music", "score export"],

@@ -10,6 +10,7 @@ import type { MuseScorePageInput, MuseScoreRenderResult } from "./musescore-adap
 import { MusicXmlValidationError, validateMxl } from "./musicxml-validator";
 import { computeScorePagePlacements, packScorePages } from "./score-page-layout";
 import {
+  OMR_REVIEW_PAGE_LAYOUT,
   SCORE_PDF_METADATA,
   STANDALONE_SCORE_PDF,
   type ScoreRasterPageLayout,
@@ -174,6 +175,7 @@ export type ReviewedScorePipelineRequest = {
   readonly outputPath: string;
   readonly workspace: string;
   readonly pages: readonly ReviewedRasterPage[];
+  readonly transcriptionPages?: readonly AudiverisApprovedPage[];
   readonly stages: ReviewedScorePipelineStages;
   readonly signal?: AbortSignal;
   readonly onStage?: (stage: ReviewedScorePipelineStage) => void;
@@ -207,7 +209,7 @@ export async function orchestrateReviewedScorePipeline(request: ReviewedScorePip
       selectedPath = request.rasterPdfPath;
     } else {
       enterReviewedStage(request, "audiveris");
-      const transcription = await request.stages.transcribe({ pages: request.pages, signal: request.signal });
+      const transcription = await request.stages.transcribe({ pages: request.transcriptionPages ?? request.pages, signal: request.signal });
       throwIfCancelled(request.signal);
       if (transcription.kind === "raster-fallback") {
         review = rasterFallbackReview(request.pages.length, [transcription.warning]);
@@ -589,21 +591,40 @@ export async function createScorePdfFromFrames(
   } else {
     const rasterPdfPath = join(workspace, "reviewed-raster.pdf");
     const structuredPdfPath = join(workspace, "reviewed-structured.pdf");
+    const omrPageDirectory = join(workspace, "omr-pages");
     await writePdf(pagePaths, rasterPdfPath, STANDALONE_SCORE_PDF, options.metadata, options.signal);
-    reviewedResult = await orchestrateReviewedScorePipeline({
-      rasterPdfPath,
-      structuredPdfPath,
-      outputPath,
-      workspace,
-      pages: await createReviewedRasterPages(pagePaths, pages, scores, frameDecisions),
-      stages: options.reviewedPipeline.stages,
-      signal: options.signal,
-      onStage: options.reviewedPipeline.onStage,
-      reportSink: async (report) => {
-        reviewedReport = report;
-        await options.reviewedPipeline?.reportSink?.(report);
+    try {
+      await mkdir(omrPageDirectory, { recursive: true });
+      const omrPagePaths: string[] = [];
+      for (let index = 0; index < pages.length; index += 1) {
+        throwIfCancelled(options.signal);
+        const pagePath = join(omrPageDirectory, `page-${String(index + 1).padStart(4, "0")}.png`);
+        await renderPage(pages[index] ?? [], pagePath, OMR_REVIEW_PAGE_LAYOUT);
+        omrPagePaths.push(pagePath);
       }
-    });
+      throwIfCancelled(options.signal);
+      const reviewedPages = await createReviewedRasterPages(pagePaths, pages, scores, frameDecisions);
+      reviewedResult = await orchestrateReviewedScorePipeline({
+        rasterPdfPath,
+        structuredPdfPath,
+        outputPath,
+        workspace,
+        pages: reviewedPages,
+        transcriptionPages: reviewedPages.map((page, index) => ({
+          path: omrPagePaths[index] ?? "",
+          lineage: page.lineage
+        })),
+        stages: options.reviewedPipeline.stages,
+        signal: options.signal,
+        onStage: options.reviewedPipeline.onStage,
+        reportSink: async (report) => {
+          reviewedReport = report;
+          await options.reviewedPipeline?.reportSink?.(report);
+        }
+      });
+    } finally {
+      await rm(omrPageDirectory, { recursive: true, force: true });
+    }
   }
   await options.outputArtifactSink?.();
   const pageCompositionFinishedAt = nowMs();

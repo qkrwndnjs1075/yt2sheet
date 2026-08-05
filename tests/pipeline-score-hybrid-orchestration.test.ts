@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { zipSync } from "fflate";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, type PDFPage } from "pdf-lib";
+import { PDFDict, PDFName, PDFNumber, PDFRawStream, PDFStream } from "pdf-lib/cjs/core";
 import type { AudiverisPageMxl, AudiverisResult } from "../pipeline/audiveris-adapter";
 import type { MuseScoreRenderResult } from "../pipeline/musescore-adapter";
 import { RASTER_REVIEW_POLICY_DIGEST, type RasterReviewResult } from "../pipeline/score-raster-review";
@@ -82,6 +83,7 @@ describe("reviewed score pipeline state machine", () => {
     assert.deepEqual(result.warnings, []);
     assert.deepEqual(stageOrder, ["raster-review", "audiveris", "musescore"]);
     assert.equal((await PDFDocument.load(await readFile(output))).getPageCount(), 2);
+    await assert.rejects(readdir(join(root, "omr-pages")));
     const evidenceDirectory = process.env["YT2SHEET_TASK11_EVIDENCE_DIR"];
     if (evidenceDirectory !== undefined) {
       await mkdir(evidenceDirectory, { recursive: true });
@@ -92,6 +94,99 @@ describe("reviewed score pipeline state machine", () => {
         writeFile(join(evidenceDirectory, "qa-happy.json"), JSON.stringify({ result, stageOrder, internalReport }, null, 2))
       ]);
     }
+  });
+
+  it("keeps reviewed raster pages low resolution while transcribing temporary A4 300-DPI pages", async (t) => {
+    // Given: a production-shaped score frame and a reviewed pipeline that records both raster and OMR page inputs.
+    const root = await mkdtemp(join(tmpdir(), "yt2sheet-reviewed-omr-resolution-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const frame = join(root, "frame.png");
+    const output = join(root, "result.pdf");
+    const reviewedRaster = join(root, "reviewed-raster.pdf");
+    const omrPageDirectory = join(root, "omr-pages");
+    const reviewDimensions: Array<{ readonly width: number; readonly height: number }> = [];
+    const transcriptionDimensions: Array<{ readonly width: number; readonly height: number }> = [];
+    const transcriptionPaths: string[] = [];
+    const transcriptionLineage: ReviewedRasterPage["lineage"][] = [];
+    const sharp = (await import("sharp")).default;
+    await Promise.all([
+      writeTallScoreFrame(frame, 180),
+      mkdir(omrPageDirectory, { recursive: true }).then(() => writeFile(join(omrPageDirectory, "stale.png"), "stale"))
+    ]);
+
+    const stages: ReviewedScorePipelineStages = {
+      async reviewRaster({ pages }) {
+        for (const page of pages) {
+          const metadata = await sharp(page.path).metadata();
+          reviewDimensions.push({ width: metadata.width ?? 0, height: metadata.height ?? 0 });
+        }
+        return passRasterReview(pages.length);
+      },
+      async transcribe({ pages }) {
+        for (const page of pages) {
+          const metadata = await sharp(page.path).metadata();
+          transcriptionDimensions.push({ width: metadata.width ?? 0, height: metadata.height ?? 0 });
+          transcriptionPaths.push(page.path);
+          transcriptionLineage.push(page.lineage);
+        }
+        return { kind: "raster-fallback", warning: warning("OMR_FAILED", { exitCode: 1, logSummary: "fixture" }) };
+      },
+      async render() { throw new TypeError("unreachable engraving"); }
+    };
+
+    // When: the real frame analysis, packing, raster PDF composition, and reviewed pipeline execute.
+    const result = await createScorePdfFromFrames([frame], root, output, {
+      metadata: { videoId: "omr-resolution", createdAt: new Date("2026-08-05T00:00:00.000Z") },
+      reviewedPipeline: { stages }
+    });
+
+    // Then: review/publication retain the established raster contract, while only transcription receives 300-DPI A4 pages.
+    assert.equal(result.reviewOutcome, "raster-fallback");
+    assert.deepEqual(reviewDimensions, [{ width: 1200, height: 1697 }]);
+    assert.deepEqual(transcriptionDimensions, [{ width: 2480, height: 3508 }]);
+    assert.deepEqual(transcriptionLineage, [{ pageNumber: 1, sourceFrameIds: ["frame-000001"], sourceScoreIds: ["score-0001"] }]);
+    assert.deepEqual(transcriptionPaths, [join(omrPageDirectory, "page-0001.png")]);
+    for (const path of transcriptionPaths) await assert.rejects(readFile(path));
+    await assert.rejects(readFile(join(omrPageDirectory, "stale.png")));
+    assert.deepEqual(embeddedPageImage((await PDFDocument.load(await readFile(reviewedRaster))).getPage(0)), { width: 1200, height: 1697 });
+    assert.deepEqual(embeddedPageImage((await PDFDocument.load(await readFile(output))).getPage(0)), { width: 1200, height: 1697 });
+  });
+
+  it("removes temporary OMR pages when transcription fails or is repeatedly cancelled", async (t) => {
+    // Given: failure and repeated cancellation exits after high-resolution pages have been rendered.
+    const variants = [
+      { name: "failure", cancel: false },
+      { name: "cancellation-1", cancel: true },
+      { name: "cancellation-2", cancel: true }
+    ] as const;
+    for (const variant of variants) await t.test(variant.name, async (inner) => {
+      const root = await mkdtemp(join(tmpdir(), `yt2sheet-reviewed-omr-${variant.name}-`));
+      inner.after(() => rm(root, { recursive: true, force: true }));
+      const frame = join(root, "frame.png");
+      const output = join(root, "result.pdf");
+      const controller = new AbortController();
+      await writeTallScoreFrame(frame, 180);
+      const stages: ReviewedScorePipelineStages = {
+        async reviewRaster({ pages }) { return passRasterReview(pages.length); },
+        async transcribe() { throw new TypeError("fixture transcription failure"); },
+        async render() { throw new TypeError("unreachable engraving"); }
+      };
+
+      // When: the reviewed pipeline exits exceptionally at the transcription boundary.
+      const result = createScorePdfFromFrames([frame], root, output, {
+        signal: controller.signal,
+        metadata: { videoId: variant.name, createdAt: new Date("2026-08-05T00:00:00.000Z") },
+        reviewedPipeline: {
+          stages,
+          onStage(stage) { if (variant.cancel && stage === "audiveris") controller.abort(); }
+        }
+      });
+
+      // Then: the original failure propagates and the high-resolution directory is absent after each interruption.
+      await assert.rejects(result, variant.cancel ? { name: "AbortError" } : { name: "TypeError" });
+      await assert.rejects(readdir(join(root, "omr-pages")));
+      await assert.rejects(readFile(output));
+    });
   });
 
   it("selects one complete structured document with ordered lineage and no intermediate publication", async (t) => {
@@ -624,6 +719,25 @@ async function writePdf(path: string, pageCount: number, marker: string): Promis
 
 async function sha256(path: string): Promise<string> {
   return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+function embeddedPageImage(page: PDFPage): { readonly width: number; readonly height: number } {
+  const resources = page.node.Resources();
+  assert.ok(resources, "PDF page resources are required");
+  const xObjects = resources.lookupMaybe(PDFName.of("XObject"), PDFDict);
+  assert.ok(xObjects, "PDF page must contain an image XObject");
+  const images = xObjects.keys().flatMap((name) => {
+    const image = xObjects.lookupMaybe(name, PDFStream);
+    return image instanceof PDFRawStream ? [image] : [];
+  });
+  assert.equal(images.length, 1);
+  const image = images[0];
+  assert.ok(image, "PDF page image is required");
+  const width = image.dict.lookupMaybe(PDFName.of("Width"), PDFNumber);
+  const height = image.dict.lookupMaybe(PDFName.of("Height"), PDFNumber);
+  assert.ok(width, "PDF image width is required");
+  assert.ok(height, "PDF image height is required");
+  return { width: width.asNumber(), height: height.asNumber() };
 }
 
 async function writeTallScoreFrame(path: string, markerX: number): Promise<void> {
