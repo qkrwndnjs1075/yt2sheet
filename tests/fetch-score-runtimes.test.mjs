@@ -2,9 +2,11 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { access, chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 
 import { assertArchiveListingSafe, cacheFileName, stageScoreRuntimes, stagingLimits } from "../scripts/fetch-score-runtimes.mjs";
@@ -17,6 +19,13 @@ const executableNames = {
 };
 const execFileAsync = promisify(execFile);
 const fixtureRoots = new Set();
+const linuxX64Host = process.platform === "linux" && process.arch === "x64";
+
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("hex");
+}
 
 after(async () => {
   const roots = [...fixtureRoots];
@@ -499,7 +508,9 @@ test("publishes a Linux bundle from darwin only with an explicit Linux fixture t
   for (const path of required) await access(join(local.outputRoot, path));
   assert.match(await readFile(join(local.outputRoot, "VERSION"), "utf8"), /linux-x64/);
   assert.deepEqual(JSON.parse(await readFile(join(local.outputRoot, "scripts/score-runtime-manifest.json"))), JSON.parse(await readFile(local.manifestPath, "utf8")));
-  assert.deepEqual(await readFile(join(local.outputRoot, "runtime", "bin", "node")), await readFile(local.runtimeNodePath));
+  const bundledRuntimeNode = join(local.outputRoot, "runtime", "bin", "node");
+  const expectedRuntimeNode = process.platform === "linux" && process.arch === "x64" ? process.execPath : local.runtimeNodePath;
+  assert.equal(await sha256File(bundledRuntimeNode), await sha256File(expectedRuntimeNode));
   const manifest = JSON.parse(await readFile(local.manifestPath, "utf8"));
   for (const [tool, runtime] of Object.entries(manifest.platforms[0].runtimes)) {
     const probe = await execFileAsync(join(local.outputRoot, runtime.stagedExecutable), runtime.versionProbe.args);
@@ -544,7 +555,7 @@ test("rejects a malformed runtime manifest before bundle swap and preserves the 
   await assertNoBundleScratch(local.root);
 });
 
-test("rejects every incomplete Linux cross-host fixture before publication", async (context) => {
+test("rejects every incomplete Linux cross-host fixture before publication", { skip: linuxX64Host ? "Linux x64 is the same-host target; cross-host guard is not applicable" : false }, async (context) => {
   // Given: Linux-target fixture configurations missing one required cross-host binding.
   const local = await buildBundleFixture("linux-x64");
   context.after(() => rm(local.root, { recursive: true, force: true }));
@@ -573,7 +584,7 @@ test("rejects every incomplete Linux cross-host fixture before publication", asy
   }
 });
 
-test("rejects a Linux cross-host target without the fixture environment", async (context) => {
+test("rejects a Linux cross-host target without the fixture environment", { skip: linuxX64Host ? "Linux x64 is the same-host target; cross-host guard is not applicable" : false }, async (context) => {
   // Given: a custom fixture manifest and cache but no narrowly named fixture environment.
   const local = await buildBundleFixture("linux-x64");
   context.after(() => rm(local.root, { recursive: true, force: true }));
