@@ -9,6 +9,7 @@ import {
   resolveScoreRuntimeTarget,
   ScoreRuntimeManifestError
 } from "../pipeline/score-runtime-manifest";
+import { resolveDefaultRuntimeTarget } from "../pipeline/youtube-score-processor";
 
 const manifestPath = resolve(process.cwd(), "scripts/score-runtime-manifest.json");
 
@@ -121,4 +122,19 @@ test("rejects ambiguous Linux resolution without an OS version", async () => {
 
   // When/Then: callers cannot silently select one platform record
   assert.throws(() => resolveScoreRuntimeTarget(manifest, "linux-x64"), ScoreRuntimeManifestError);
+});
+
+test("selects the pinned Ubuntu runtime from the host OS release", async () => {
+  // Given: a Linux host whose manifest has separate Ubuntu 22.04 and 24.04 records.
+  const manifest = await loadScoreRuntimeManifest(manifestPath);
+  const root = await mkdtemp(join(tmpdir(), "yt2sheet-runtime-host-"));
+  const osReleasePath = join(root, "os-release");
+  await writeFile(osReleasePath, "ID=ubuntu\nVERSION_ID=\"24.04\"\n", "utf8");
+
+  // When: the installed pipeline resolves its default target on that host.
+  const target = await resolveDefaultRuntimeTarget(manifest, { platform: "linux", architecture: "x64", osReleasePath });
+
+  // Then: the exact Ubuntu 24.04 record is selected instead of the ambiguous release target.
+  assert.equal(target.id, "ubuntu-24.04-x64");
+  await rm(root, { recursive: true, force: true });
 });

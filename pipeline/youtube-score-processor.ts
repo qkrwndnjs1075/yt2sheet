@@ -425,7 +425,7 @@ function isFileSystemError(error: unknown): boolean {
 
 async function createInstalledReviewedPipeline(request: { readonly runtimeRoot: string; readonly assetRoot: string }): Promise<ReviewedPipeline> {
   const manifest = await loadInstalledScoreRuntimeManifest(request.assetRoot);
-  const target = resolveDefaultRuntimeTarget(manifest);
+  const target = await resolveDefaultRuntimeTarget(manifest);
   const leland = manifest.tools.musescore.fonts.find((font) => font.family === "Leland");
   const expectedLelandFontSha256 = leland === undefined ? "" : await digestDirectory(resolve(request.runtimeRoot, leland.bundledPath));
   return {
@@ -473,16 +473,27 @@ async function loadInstalledScoreRuntimeManifest(assetRoot: string): Promise<Sco
   throw lastError ?? new Error("score runtime manifest is unavailable");
 }
 
-function resolveDefaultRuntimeTarget(manifest: ScoreRuntimeManifest): ScoreRuntimePlatform {
-  const releaseTarget = process.platform === "darwin"
-    ? process.arch === "arm64" ? "darwin-arm64" : "darwin-x64"
-    : process.platform === "win32" ? "windows-x64" : "linux-x64";
-  const candidates = manifest.platforms.filter((platform) => platform.releaseTarget === releaseTarget);
-  if (candidates.length === 1) {
-    const target = candidates[0];
-    if (target !== undefined) return target;
+export async function resolveDefaultRuntimeTarget(
+  manifest: ScoreRuntimeManifest,
+  options: Readonly<{ platform?: string; architecture?: string; osReleasePath?: string }> = {}
+): Promise<ScoreRuntimePlatform> {
+  const hostPlatform = options.platform ?? process.platform;
+  const hostArchitecture = options.architecture ?? process.arch;
+  if (hostPlatform === "darwin" && hostArchitecture === "arm64") return resolveScoreRuntimeTarget(manifest, "darwin-arm64", "14");
+  if (hostPlatform === "darwin" && hostArchitecture === "x64") return resolveScoreRuntimeTarget(manifest, "darwin-x64", "14");
+  if (hostPlatform === "win32" && hostArchitecture === "x64") return resolveScoreRuntimeTarget(manifest, "windows-x64", "2022");
+  if (hostPlatform !== "linux" || hostArchitecture !== "x64") {
+    throw new Error(`지원하지 않는 점수 런타임 호스트입니다: ${hostPlatform}-${hostArchitecture}`);
   }
-  return resolveScoreRuntimeTarget(manifest, releaseTarget);
+  const source = await readFile(options.osReleasePath ?? process.env.YT2SHEET_OS_RELEASE_FILE?.trim() ?? "/etc/os-release", "utf8");
+  const fields = Object.fromEntries(source.split(/\r?\n/u).flatMap((line) => {
+    const match = /^([A-Z_]+)=(?:"([^"]*)"|'([^']*)'|([^#\s]*))$/u.exec(line);
+    return match?.[1] ? [[match[1], match[2] ?? match[3] ?? match[4] ?? ""]] : [];
+  }));
+  if (fields.ID !== "ubuntu" || (fields.VERSION_ID !== "22.04" && fields.VERSION_ID !== "24.04")) {
+    throw new Error(`지원하는 점수 런타임은 Ubuntu 22.04/24.04 x64입니다: ${fields.ID ?? "unknown"} ${fields.VERSION_ID ?? "unknown"}`);
+  }
+  return resolveScoreRuntimeTarget(manifest, "linux-x64", fields.VERSION_ID);
 }
 
 async function digestDirectory(root: string): Promise<string> {
