@@ -40,6 +40,7 @@ const inventorySchema = z.object({
 type RuntimeInventory = z.infer<typeof inventorySchema>;
 type RuntimeTool = (typeof RUNTIME_TOOLS)[number];
 type StandardCheckKey = (typeof STANDARD_CHECKS)[number];
+type ScoreFont = ScoreRuntimeManifest["tools"]["musescore"]["fonts"][number];
 type ProbeOutput = {
   readonly stdout: string;
   readonly stderr: string;
@@ -76,7 +77,7 @@ export async function inspectDoctorScoreRuntimes(packageRoot: string, options: D
     };
   }
 
-  const standardChecks = await inspectStandardAssets(root, manifest);
+  const standardChecks = await inspectStandardAssets(root, manifest, platform);
 
   let inventory: RuntimeInventory;
   try {
@@ -105,10 +106,10 @@ export async function inspectDoctorScoreRuntimes(packageRoot: string, options: D
   };
 }
 
-async function inspectStandardAssets(root: string, manifest: ScoreRuntimeManifest): Promise<readonly DoctorCheck[]> {
+async function inspectStandardAssets(root: string, manifest: ScoreRuntimeManifest, platform: ScoreRuntimePlatform): Promise<readonly DoctorCheck[]> {
   const checks = await Promise.all([
     inspectMusicXmlSchemas(root, manifest),
-    inspectScoreFonts(root, manifest),
+    inspectScoreFonts(root, manifest, platform),
     inspectComplianceArtifacts(root, manifest)
   ]);
   return checks;
@@ -139,25 +140,38 @@ async function inspectMusicXmlSchemas(root: string, manifest: ScoreRuntimeManife
   }
 }
 
-async function inspectScoreFonts(root: string, manifest: ScoreRuntimeManifest): Promise<DoctorCheck> {
+async function inspectScoreFonts(root: string, manifest: ScoreRuntimeManifest, platform: ScoreRuntimePlatform): Promise<DoctorCheck> {
   try {
     const bom = await readJson(resolvePackagePath(root, "bom.cdx.json"));
     const components = recordArray(bom, "components");
+    const sourceManifest = parseJsonObject(await readFile(resolvePackagePath(root, "SOURCE_MANIFEST.json")), "SOURCE_MANIFEST.json");
+    const npmBootstrap = sourceManifest.packageKind === "npm-bootstrap";
     const fonts = manifest.tools.musescore.fonts;
+    let runtimeBundled = false;
     for (const font of fonts) {
-      const directory = resolvePackagePath(root, font.bundledPath);
-      const files = await collectRegularFiles(directory);
+      const bundled = await resolveFontFiles(root, platform, font, npmBootstrap);
+      const files = bundled.files;
+      runtimeBundled ||= bundled.runtime;
       if (files.length === 0) throw new Error(`${font.family} 폰트 파일이 없습니다.`);
-      const licensePath = resolvePackagePath(root, font.license.bundledPath);
-      if ((await readFile(licensePath)).byteLength === 0) throw new Error(`${font.family} 폰트 라이선스가 비어 있습니다.`);
       const component = components.find((candidate) => candidate.name === font.family);
       if (component === undefined) throw new Error(`SBOM에 ${font.family} 폰트 component가 없습니다.`);
-      const hash = firstSha256(component);
-      if (hash === undefined || hash !== await digestFile(files[0])) {
-        throw new Error(`${font.family} 폰트 identity/hash가 SBOM과 다릅니다.`);
+      if (!bundled.runtime) {
+        const licensePath = resolvePackagePath(root, font.license.bundledPath);
+        if ((await readFile(licensePath)).byteLength === 0) throw new Error(`${font.family} 폰트 라이선스가 비어 있습니다.`);
+        const hash = firstSha256(component);
+        if (hash === undefined || hash !== await digestFile(files[0])) {
+          throw new Error(`${font.family} 폰트 identity/hash가 SBOM과 다릅니다.`);
+        }
       }
     }
-    return { key: "score-fonts", label: "악보 폰트", status: "pass", message: "Bravura/Leland 폰트 identity, 라이선스, SBOM hash를 확인했습니다." };
+    return {
+      key: "score-fonts",
+      label: "악보 폰트",
+      status: "pass",
+      message: runtimeBundled
+        ? "npm bootstrap의 MuseScore 런타임에서 Bravura/Leland 폰트와 SBOM provenance를 확인했습니다."
+        : "Bravura/Leland 폰트 identity, 라이선스, SBOM hash를 확인했습니다."
+    };
   } catch (error: unknown) {
     return standardFailure("score-fonts", "패키지 소유 악보 폰트 identity를 확인할 수 없습니다.", describeError(error));
   }
@@ -174,6 +188,12 @@ async function inspectComplianceArtifacts(root: string, manifest: ScoreRuntimeMa
     if (sourceManifest.schemaVersion !== "yt2sheet-source-manifest/1" || !Array.isArray(sourceManifest.sources) || !Array.isArray(sourceManifest.directPackages)) {
       throw new Error("SOURCE_MANIFEST 계약이 올바르지 않습니다.");
     }
+    const expectedComponents = new Set(["Audiveris", "MuseScore", ...manifest.tools.musescore.fonts.map((font) => font.family)]);
+    const actualComponents = new Set(recordArray(bom, "components").map((component) => component.name).filter((name): name is string => typeof name === "string"));
+    for (const name of expectedComponents) if (!actualComponents.has(name)) throw new Error(`SBOM component가 없습니다: ${name}`);
+    if (sourceManifest.packageKind === "npm-bootstrap") {
+      return { key: "compliance-sbom", label: "SBOM/고지", status: "pass", message: "npm bootstrap의 CycloneDX SBOM, source manifest, 고지를 확인했습니다." };
+    }
     const summary = parseJsonObject(await readFile(resolvePackagePath(root, "COMPLIANCE_SUMMARY.json")), "COMPLIANCE_SUMMARY.json");
     if (summary.schemaVersion !== "yt2sheet-compliance-summary/1" || typeof summary.artifacts !== "object" || summary.artifacts === null) {
       throw new Error("COMPLIANCE_SUMMARY 계약이 올바르지 않습니다.");
@@ -185,9 +205,6 @@ async function inspectComplianceArtifacts(root: string, manifest: ScoreRuntimeMa
         throw new Error(`compliance artifact SHA-256이 다릅니다: ${name}`);
       }
     }
-    const expectedComponents = new Set(["Audiveris", "MuseScore", ...manifest.tools.musescore.fonts.map((font) => font.family)]);
-    const actualComponents = new Set(recordArray(bom, "components").map((component) => component.name).filter((name): name is string => typeof name === "string"));
-    for (const name of expectedComponents) if (!actualComponents.has(name)) throw new Error(`SBOM component가 없습니다: ${name}`);
     return { key: "compliance-sbom", label: "SBOM/고지", status: "pass", message: "CycloneDX SBOM, source manifest, 고지, compliance digest를 확인했습니다." };
   } catch (error: unknown) {
     return standardFailure("compliance-sbom", "SBOM/고지 산출물을 확인할 수 없습니다.", describeError(error));
@@ -299,14 +316,24 @@ async function inspectRuntimeTool(root: string, platform: ScoreRuntimePlatform, 
     const probe = await runVersionProbe(executable, runtime.versionProbe.args);
     const stdout = normalizeProbe(probe.stdout);
     const stderr = normalizeProbe(probe.stderr);
-    if (probe.truncated || stdout !== runtime.versionProbe.expected || stderr !== "") {
+    const observed = parseVersionProbe(stdout, tool, runtime.versionProbe.expected);
+    if (probe.truncated || observed === undefined || stderr !== "") {
       return runtimeFailure(tool, `정확한 버전 ${runtime.versionProbe.expected} 확인에 실패했습니다.`, `stdout=${digestText(stdout)}, stderr=${digestText(stderr)}${probe.truncated ? ", output-truncated" : ""}`);
     }
-    if (inventory.versionProbes[tool] !== stdout) return runtimeFailure(tool, "인벤토리 버전과 실행 파일 버전이 다릅니다.");
-    return { key: tool, label: tool === "audiveris" ? "Audiveris" : "MuseScore", status: "pass", message: `패키지 번들에서 정확한 버전 ${stdout} 확인됨` };
+    if (inventory.versionProbes[tool] !== observed) return runtimeFailure(tool, "인벤토리 버전과 실행 파일 버전이 다릅니다.");
+    return { key: tool, label: tool === "audiveris" ? "Audiveris" : "MuseScore", status: "pass", message: `패키지 번들에서 정확한 버전 ${observed} 확인됨` };
   } catch (error: unknown) {
     return runtimeFailure(tool, "패키지 소유 staged executable을 실행할 수 없습니다.", describeError(error));
   }
+}
+
+function parseVersionProbe(output: string, tool: RuntimeTool, expected: string): string | undefined {
+  if (output === expected) return expected;
+  const lines = output.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (tool === "audiveris" && lines.some((line) => new RegExp(`^-\\s*Version:\\s*${escapedExpected}$`, "u").test(line))) return expected;
+  if (tool === "musescore" && lines.length === 1 && lines[0] === `MuseScore4 ${expected}`) return expected;
+  return undefined;
 }
 
 async function runVersionProbe(executable: string, args: readonly string[]): Promise<ProbeOutput> {
@@ -450,6 +477,41 @@ async function collectRegularFiles(root: string): Promise<readonly string[]> {
   };
   await visit(root);
   return files.sort();
+}
+
+async function resolveFontFiles(root: string, platform: ScoreRuntimePlatform, font: ScoreFont, npmBootstrap: boolean): Promise<{ readonly files: readonly string[]; readonly runtime: boolean }> {
+  try {
+    return { files: await collectRegularFiles(resolvePackagePath(root, font.bundledPath)), runtime: false };
+  } catch (error: unknown) {
+    if (!npmBootstrap || !isMissingFile(error)) throw error;
+    const runtimeFont = await findRuntimeFontFile(root, platform, font.family);
+    return { files: runtimeFont === undefined ? [] : [runtimeFont], runtime: true };
+  }
+}
+
+async function findRuntimeFontFile(root: string, platform: ScoreRuntimePlatform, family: ScoreFont["family"]): Promise<string | undefined> {
+  const executableParts = platform.runtimes.musescore.stagedExecutable.split("/");
+  const appIndex = executableParts.findIndex((part) => part.endsWith(".app"));
+  const runtimeRootPath = appIndex >= 0 ? executableParts.slice(0, appIndex + 1).join("/") : "tools/musescore";
+  const runtimeRoot = resolvePackagePath(root, runtimeRootPath);
+  const names = family === "Bravura" ? new Set(["Bravura.otf", "BravuraText.otf"]) : new Set(["Leland.otf", "LelandText.otf"]);
+  return findNamedFile(runtimeRoot, names);
+}
+
+async function findNamedFile(root: string, names: ReadonlySet<string>): Promise<string | undefined> {
+  const details = await lstat(root);
+  if (details.isSymbolicLink()) return undefined;
+  if (details.isFile()) return names.has(basename(root)) ? root : undefined;
+  if (!details.isDirectory()) return undefined;
+  for (const entry of (await readdir(root, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+    const found = await findNamedFile(join(root, entry.name), names);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function normalizeProbe(value: string): string {

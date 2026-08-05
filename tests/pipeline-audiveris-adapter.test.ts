@@ -33,3 +33,20 @@ it("transcribes two approved pages in order with exact Audiveris argv and lineag
   ]);
   assert.deepEqual(await readdir(fixture.workspaceRoot), ["audiveris-output", "stale.txt"]);
 });
+
+it("accepts the official multiline Audiveris version banner", async (t) => {
+  // Given: Audiveris 5.11.0 emits its documented banner plus an informational startup line.
+  const fixture = await audiverisFixture(t, ["valid"], "INFO  []              TesseractOCR 137  | Creating OCR folder\nAudiveris\n- Version:      5.11.0\n- Commit:       9e1e55cd2746037d059345881c53e6a6754bffbd\n");
+
+  // When: the approved page crosses the real isolated Audiveris adapter.
+  const result = await transcribeAudiverisPages(fixture.request);
+
+  // Then: the valid pinned version reaches page transcription instead of falling back at the probe.
+  assert.equal(result.kind, "structured");
+  if (result.kind !== "structured") return;
+  assert.equal(result.pages.length, 1);
+  assert.deepEqual(await readInvocations(fixture.invocationPath), [
+    ["-version"],
+    ["-batch", "-export", "-output", "audiveris-output", "--", fixture.request.pages[0]?.path]
+  ]);
+});

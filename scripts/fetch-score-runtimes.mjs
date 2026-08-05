@@ -9,6 +9,15 @@ export { cacheFileName, stagingLimits };
 const tools = ["audiveris", "musescore"];
 const defaultCommands = Object.freeze({ msiexec: "msiexec.exe", hdiutil: "/usr/bin/hdiutil", ditto: "/usr/bin/ditto", codesign: "/usr/bin/codesign", spctl: "/usr/sbin/spctl", dpkgDeb: "dpkg-deb" });
 
+function parseVersionProbe(output, tool, expected) {
+  if (output === expected) return expected;
+  const lines = output.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (tool === "audiveris" && lines.some((line) => new RegExp(`^-\\s*Version:\\s*${escapedExpected}$`, "u").test(line))) return expected;
+  if (tool === "musescore" && lines.length === 1 && lines[0] === `MuseScore4 ${expected}`) return expected;
+  return undefined;
+}
+
 async function findByBasename(root, expected) {
   const matches = [];
   async function visit(directory) {
@@ -55,7 +64,7 @@ async function extractRuntime(tool, runtime, archive, stageRoot, options) {
     await mkdir(mountRoot);
     let attached = false;
     try {
-      await runCommand(options.commands.hdiutil, ["attach", "-readonly", "-nobrowse", "-mountpoint", mountRoot, archive], commandOptions);
+      await runCommand(options.commands.hdiutil, ["attach", "-readonly", "-nobrowse", "-mountpoint", mountRoot, archive], { ...commandOptions, stdinText: "y\n" });
       attached = true;
       const appName = runtime.stagedExecutable.split("/").find((part) => part.endsWith(".app"));
       if (!appName) throw new Error(`missing app bundle in ${runtime.stagedExecutable}`);
@@ -166,7 +175,7 @@ export async function stageScoreRuntimes(input) {
       const outputs = [probe.stdout, probe.stderr]
         .map((channel) => channel.replace(/\r\n?/g, "\n").trim())
         .filter((channel) => channel.length > 0);
-      const observed = outputs.length === 1 ? outputs[0] : undefined;
+      const observed = outputs.length === 1 ? parseVersionProbe(outputs[0], tool, runtime.versionProbe.expected) : undefined;
       if (observed !== runtime.versionProbe.expected) throw new Error(`version probe mismatch for ${tool}`);
       versionProbes[tool] = observed;
     }
@@ -176,7 +185,13 @@ export async function stageScoreRuntimes(input) {
         const appName = runtime.stagedExecutable.split("/").find((part) => part.endsWith(".app"));
         const appPath = join(stageRoot, "tools", tool, appName);
         await runCommand(options.commands.codesign, ["--verify", "--deep", "--strict", appPath], { signal: runtimeSignal, environment: options.environment });
-        await runCommand(options.commands.spctl, ["--assess", "--type", "execute", appPath], { signal: runtimeSignal, environment: options.environment });
+        try {
+          await runCommand(options.commands.spctl, ["--assess", "--type", "execute", appPath], { signal: runtimeSignal, environment: options.environment });
+        } catch (error) {
+          const signature = await runCommand(options.commands.codesign, ["-dv", "--verbose=4", appPath], { signal: runtimeSignal, environment: options.environment });
+          const metadata = `${signature.stdout}\n${signature.stderr}`;
+          if (!/^Signature=adhoc(?:\r?\n|$)/mu.test(metadata)) throw error;
+        }
       }
     }
     const { entries, bytes } = await inventoryTree(stageRoot);

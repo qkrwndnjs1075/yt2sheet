@@ -27,6 +27,18 @@ test("loads exact release targets and probes when the checked-in contract is val
   }
 });
 
+test("pins the actual MuseScore macOS application bundle name", async () => {
+  // Given: the checked-in runtime manifest for supported macOS targets.
+  const manifest = await loadScoreRuntimeManifest(manifestPath);
+  // When: the MuseScore app path is resolved for each macOS architecture.
+  const macos = manifest.platforms.filter(({ id }) => id.startsWith("macos-"));
+  // Then: it matches the app bundle shipped by MuseScore Studio 4.7.4.
+  assert.equal(macos.length, 2);
+  for (const platform of macos) {
+    assert.equal(platform.runtimes.musescore.stagedExecutable, "tools/musescore/MuseScore 4.app/Contents/MacOS/mscore");
+  }
+});
+
 test("resolves every declared MusicXML schema bundled path to a packaged file", async () => {
   // Given: the checked-in validated manifest
   const manifest = await loadScoreRuntimeManifest(manifestPath);

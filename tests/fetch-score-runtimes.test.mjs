@@ -88,6 +88,10 @@ async function fixture(options = {}) {
 set -eu
 if [ "\${1}" = "detach" ]; then exit 0; fi
 if [ "\${LONG_EXTRACTION:-0}" = "1" ]; then sleep 30; fi
+if [ "\${REQUIRE_LICENSE:-0}" = "1" ]; then
+  IFS= read -r acceptance || exit 112
+  [ "$acceptance" = "y" ] || exit 112
+fi
 mountpoint="\${5}"
 archive="\${6}"
 case "$archive" in
@@ -99,6 +103,8 @@ esac
   const fakeSpctl = join(root, "spctl");
   const signatureCommand = `#!/bin/sh
 echo 'accepted and valid'
+if [ "\${ADHOC_SIGNATURE:-0}" = "1" ] && [ "$(basename "$0")" = "codesign" ]; then echo 'Signature=adhoc' >&2; fi
+if [ "\${SPCTL_FAIL:-0}" = "1" ] && [ "$(basename "$0")" = "spctl" ]; then exit 3; fi
 if [ "\${SIGNATURE_FAIL:-0}" = "1" ]; then exit 1; fi
 `;
   await writeExecutable(fakeCodesign, signatureCommand);
@@ -335,6 +341,28 @@ test("stages cached signed macOS apps and writes a deterministic inventory", asy
     await writeFile(join(process.env.SCORE_RUNTIME_EVIDENCE_DIR, "fixture-runtime-inventory.json"), firstInventory, "utf8");
     await writeFile(join(process.env.SCORE_RUNTIME_EVIDENCE_DIR, "fixture-version-probes.json"), `${JSON.stringify(result.versionProbes, null, 2)}\n`, "utf8");
   }
+});
+
+test("accepts a noninteractive macOS disk-image license before copying the app", async () => {
+  // Given: a DMG extractor that models hdiutil's embedded-license prompt.
+  const local = await fixture();
+  // When: staging supplies the explicit acceptance through the extractor seam.
+  const result = await stage(local, { environment: { FIXTURE_ROOT: local.fixtureRoot, REQUIRE_LICENSE: "1" } });
+  // Then: both apps are staged and version probes remain observable.
+  assert.deepEqual(result.versionProbes, { audiveris: "5.11.0", musescore: "4.7.4" });
+  await access(join(local.targetRoot, "tools", "audiveris", executableNames.audiveris));
+  await access(join(local.targetRoot, "tools", "musescore", executableNames.musescore));
+});
+
+test("accepts pinned runtime versions inside official tool banners", async () => {
+  // Given: the official macOS probes emit a banner instead of a bare version.
+  const local = await fixture();
+  await writeExecutable(join(local.fixtureRoot, "audiveris", executableNames.audiveris), "#!/bin/sh\nprintf 'Audiveris\\n- Version:      5.11.0\\n'\n");
+  await writeExecutable(join(local.fixtureRoot, "musescore", executableNames.musescore), "#!/bin/sh\nprintf 'MuseScore4 4.7.4\\n'\n");
+  // When: the pinned runtimes are staged and probed through their real command boundary.
+  const result = await stage(local);
+  // Then: the semantic versions are accepted without weakening exact-channel checks.
+  assert.deepEqual(result.versionProbes, { audiveris: "5.11.0", musescore: "4.7.4" });
 });
 
 test("rejects non-exact version probe output and preserves the prior bundle", async () => {
@@ -702,6 +730,15 @@ test("trusts signature command exit status rather than misleading output", async
   // When/Then: staging fails closed and preserves the prior bundle.
   await assert.rejects(stage(local, { environment: { FIXTURE_ROOT: local.fixtureRoot, SIGNATURE_FAIL: "1" } }), /codesign|command failed/i);
   await assertPriorOutputIsUntouched(local);
+});
+
+test("accepts a pinned ad hoc macOS app when Gatekeeper cannot assess the upstream image", async () => {
+  // Given: the pinned archive has a valid ad hoc code signature but Gatekeeper rejects it.
+  const local = await fixture();
+  // When: staging validates the archive hash and strict code signature before the Gatekeeper check.
+  const result = await stage(local, { environment: { FIXTURE_ROOT: local.fixtureRoot, ADHOC_SIGNATURE: "1", SPCTL_FAIL: "1" } });
+  // Then: the known upstream runtime is staged without accepting an unsigned or unverified app.
+  assert.deepEqual(result.versionProbes, { audiveris: "5.11.0", musescore: "4.7.4" });
 });
 
 test("rejects unsupported manifest targets without touching prior output", async () => {

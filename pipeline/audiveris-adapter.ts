@@ -82,7 +82,7 @@ export async function transcribeAudiverisPages(request: AudiverisRequest): Promi
   if (!probe.ok) return fallback(toolWarning(probe, firstPage.lineage.pageNumber, request));
   const stdoutVersion = probe.stdout.trim();
   const stderrVersion = probe.stderr.trim();
-  if (runtime.versionProbe.expected !== AUDIVERIS_VERSION || stdoutVersion !== AUDIVERIS_VERSION || stderrVersion.length !== 0) {
+  if (runtime.versionProbe.expected !== AUDIVERIS_VERSION || !isExpectedVersionOutput(stdoutVersion) || stderrVersion.length !== 0) {
     return unavailable(`expected=${AUDIVERIS_VERSION},stdout=${probeDigest(stdoutVersion)},stderr=${probeDigest(stderrVersion)}`);
   }
   const pages: AudiverisPageMxl[] = [];
@@ -198,6 +198,13 @@ function validationWarning(pageNumber: number, error: MusicXmlValidationError): 
 
 function unavailable(versionProbe: string): AudiverisResult {
   return fallback({ pageNumber: null, code: "OMR_UNAVAILABLE", evidence: { tool: "audiveris", versionProbe } });
+}
+
+function isExpectedVersionOutput(output: string): boolean {
+  if (output === AUDIVERIS_VERSION) return true;
+  const lines = output.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const escapedVersion = AUDIVERIS_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return lines.some((line) => new RegExp(`^-\\s*Version:\\s*${escapedVersion}$`, "u").test(line));
 }
 
 function failed(pageNumber: number | null, exitCode: number | string, logSummary: string): ScoreReviewDecisionInput {

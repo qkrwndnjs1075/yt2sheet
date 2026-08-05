@@ -118,6 +118,38 @@ test("doctor accepts only a complete pinned runtime fixture with exact versions 
   assert.match(conflictingProbe.checks.find((check) => check.key === "musescore")?.detail ?? "", /stderr=/);
 });
 
+test("doctor accepts official runtime banners and the npm bootstrap asset shape", async (t) => {
+  // Given: the verified macOS tools emit their official banners and npm carries runtime fonts inside MuseScore.
+  const fixture = await createDoctorRuntimeFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const manifest = await loadScoreRuntimeManifest(join(fixture.root, "scripts", "score-runtime-manifest.json"));
+  await writeFile(fixture.audiverisExecutable, "#!/bin/sh\nprintf 'Audiveris\\n- Version:      5.11.0\\n'\n", "utf8");
+  await chmod(fixture.audiverisExecutable, 0o755);
+  const runtimeFonts = join(fixture.root, "tools/musescore/MuseScore 4.app/Contents/Resources/fonts");
+  await mkdir(runtimeFonts, { recursive: true });
+  for (const font of manifest.tools.musescore.fonts) {
+    await rm(join(fixture.root, font.bundledPath), { recursive: true, force: true });
+    await rm(join(fixture.root, font.license.bundledPath), { force: true });
+    const fileName = font.family === "Bravura" ? "BravuraText.otf" : "Leland.otf";
+    await writeFile(join(runtimeFonts, fileName), `${font.family} runtime font fixture\n`, "utf8");
+  }
+  await rm(join(fixture.root, "COMPLIANCE_SUMMARY.json"), { force: true });
+  const sourceManifestPath = join(fixture.root, "SOURCE_MANIFEST.json");
+  const sourceManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as Record<string, unknown>;
+  sourceManifest.packageKind = "npm-bootstrap";
+  await writeFile(sourceManifestPath, `${JSON.stringify(sourceManifest)}\n`, "utf8");
+  await writeRuntimeInventory(fixture.root, fixture.platform);
+
+  // When: offline doctor inspects the npm-installed runtime tree.
+  const result = await inspectDoctorScoreRuntimes(fixture.root, { platform: "darwin", architecture: "arm64" });
+
+  // Then: the package-owned runtime and compliance checks remain available.
+  assert.equal(result.available, true);
+  assert.equal(result.checks.find((check) => check.key === "audiveris")?.status, "pass");
+  assert.equal(result.checks.find((check) => check.key === "score-fonts")?.status, "pass");
+  assert.equal(result.checks.find((check) => check.key === "compliance-sbom")?.status, "pass");
+});
+
 test("doctor fails closed for missing schema, mismatched font, and invalid SBOM artifacts", async (t) => {
   const fixture = await createDoctorRuntimeFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));

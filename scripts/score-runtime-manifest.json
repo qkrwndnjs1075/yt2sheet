@@ -79,14 +79,14 @@
       "id": "macos-14-arm64", "releaseTarget": "darwin-arm64", "os": "macos", "osVersion": "14", "arch": "arm64",
       "runtimes": {
         "audiveris": { "assetName": "Audiveris-5.11.0-macosx-arm64.dmg", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-macosx-arm64.dmg", "sha256": "17491af8b6d40153b031dd1f0815e37213f0999ef23f10586af46706e59b2eb6", "extraction": "dmg-copy-app", "stagedExecutable": "tools/audiveris/Audiveris.app/Contents/MacOS/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
-        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore Studio.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore 4.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
       }
     },
     {
       "id": "macos-14-x64", "releaseTarget": "darwin-x64", "os": "macos", "osVersion": "14", "arch": "x64",
       "runtimes": {
         "audiveris": { "assetName": "Audiveris-5.11.0-macosx-x86_64.dmg", "url": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-macosx-x86_64.dmg", "sha256": "11794424c6f1698617836a77d2c5818c46405a3fe7388281c623c4e383fa33cb", "extraction": "dmg-copy-app", "stagedExecutable": "tools/audiveris/Audiveris.app/Contents/MacOS/Audiveris", "versionProbe": { "args": ["-version"], "expected": "5.11.0" } },
-        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore Studio.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
+        "musescore": { "assetName": "MuseScore-Studio-4.7.4.260706075.dmg", "url": "https://github.com/musescore/MuseScore/releases/download/v4.7.4/MuseScore-Studio-4.7.4.260706075.dmg", "sha256": "e3596e27da0806a3384cab67d52f8478ad21ed2bd6fc96d7cb874d840b016fac", "extraction": "dmg-copy-app", "stagedExecutable": "tools/musescore/MuseScore 4.app/Contents/MacOS/mscore", "versionProbe": { "args": ["--version"], "expected": "4.7.4" } }
       }
     },
     {

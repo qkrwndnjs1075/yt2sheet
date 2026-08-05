@@ -104,7 +104,8 @@ export function runCommand(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd, signal: options.signal, windowsHide: true,
-      env: { ...process.env, ...options.environment }, stdio: ["ignore", "pipe", "pipe"]
+      env: { ...process.env, ...options.environment },
+      stdio: [typeof options.stdinText === "string" ? "pipe" : "ignore", "pipe", "pipe"]
     });
     const stdout = [];
     const stderr = [];
@@ -122,6 +123,7 @@ export function runCommand(command, args, options = {}) {
     }, 25) : undefined;
     child.stdout.on("data", (chunk) => stdout.push(chunk));
     child.stderr.on("data", (chunk) => stderr.push(chunk));
+    if (typeof options.stdinText === "string") child.stdin.end(options.stdinText);
     child.once("error", reject);
     child.once("close", (code, signal) => {
       if (budgetTimer) clearInterval(budgetTimer);
