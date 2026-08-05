@@ -19,6 +19,7 @@ const eventTraceReferenceSchema = fileReferenceSchema;
 const sourceCommon = {
   relativePath: relativeFileSchema,
   sha256: sha256Schema,
+  contentSha256: sha256Schema.optional(),
   byteLength: z.number().int().nonnegative(),
   durationMs: durationSchema,
   eventTrace: eventTraceReferenceSchema,
@@ -36,6 +37,36 @@ const externalSourceSchema = z
     kind: z.literal("external-local"),
     ...sourceCommon,
     originUrl: z.url().optional(),
+  })
+  .strict();
+
+const generationSchema = z
+  .object({
+    generator: z
+      .object({
+        name: z.literal("verovio"),
+        version: z.literal("6.1.0"),
+        command: z.string().min(1),
+        provenance: fileReferenceSchema,
+      })
+      .strict(),
+    renderer: z
+      .object({
+        name: z.string().min(1),
+        version: z.string().min(1),
+        command: z.string().min(1),
+        independent: z.literal(true),
+      })
+      .strict(),
+    musicXml: fileReferenceSchema,
+  })
+  .strict();
+
+const generatedSourceSchema = z
+  .object({
+    kind: z.enum(["generated-local", "local-video"]),
+    ...sourceCommon,
+    generation: generationSchema,
   })
   .strict();
 
@@ -73,7 +104,7 @@ const assetSchema = z
     sourceGroupId: identifierSchema,
     split: z.enum(["smoke", "calibration", "test"]),
     classTags: z.array(z.enum(["static", "cursor", "scroll", "hard-turn", "fade", "compression", "no-score"])).min(1),
-    source: z.discriminatedUnion("kind", [syntheticSourceSchema, externalSourceSchema]),
+    source: z.discriminatedUnion("kind", [syntheticSourceSchema, externalSourceSchema, generatedSourceSchema]),
     rights: z.discriminatedUnion("decision", [approvedRightsSchema, blockedRightsSchema]),
     labels: fileReferenceSchema,
   })
@@ -124,6 +155,17 @@ const probeSchema = z
   })
   .strict();
 
+const oracleSchema = z
+  .object({
+    expectedDisposition: z.enum(["blocked", "structured", "raster-fallback"]),
+    expectedPageCount: z.number().int().nonnegative(),
+    expectedPageOrder: z.array(z.number().int().positive()),
+    expectedStaffCounts: z.array(z.number().int().nonnegative()),
+    expectedSystemCounts: z.array(z.number().int().nonnegative()),
+    groundTruthMusicXmlSha256: sha256Schema,
+  })
+  .strict();
+
 export const scoreLabelsSchema = z
   .object({
     schemaVersion: z.literal("score-labels/1"),
@@ -132,6 +174,7 @@ export const scoreLabelsSchema = z
     states: z.array(stateSchema),
     boundaries: z.array(boundarySchema),
     probes: z.array(probeSchema),
+    oracle: oracleSchema.optional(),
     annotators: z.array(z.object({ id: identifierSchema, role: z.enum(["annotator", "adjudicator"]) }).strict()).min(1),
     confidence: z.number().finite().min(0).max(1),
   })

@@ -1,5 +1,11 @@
 # Lessons
 
+- When increasing OMR resolution, keep the authoritative raster-review and public PDF pages on their fixed `1200x1697` contract. Render a separate temporary A4 300-DPI page set only for transcription, copy reviewed lineage, and remove it through one `finally` boundary on every outcome.
+
+- The official Audiveris `-version` command is not a bare version probe: it can emit startup INFO text followed by a multiline `- Version: 5.11.0` banner. Keep the version-line parser strict, but do not compare the whole stdout byte-for-byte or a healthy runtime is mislabeled `OMR_UNAVAILABLE`.
+
+- Passing the OMR version probe does not prove a page can be transcribed. Audiveris can reject a low-resolution raster with a nonzero export result; preserve the safe raster fallback and report that page-quality gate separately from runtime availability.
+
 - A score artifact cleaner must classify a whole nearby text group before erasing top-right components. Per-glyph edge thresholds can keep `Frédéric Chop` while silently deleting the trailing `in`; compare the normalized export to the exact source frame at text boundaries, not just staff completeness.
 
 - Deduplication success is not score-quality success. When two captures share notation but one contains additional legitimate title, tempo, staff, or measure context, do not keep the earliest frame blindly; compare completeness inside the score region and retain the best representative before composing the PDF.
@@ -130,3 +136,25 @@
 # 2026-08-04 - Honor the requested local clone destination
 
 - When cloning a repository for the user, confirm the desired local destination before reporting completion; if corrected, move the existing complete clone rather than making a second copy, then verify its remote and revision at the requested location.
+
+# 2026-08-04 - Treat version-probe channels as one strict response
+
+- Never accept an expected version from one process stream while ignoring a nonempty conflicting stream. Pin the documented stdout/stderr contract and reject ambiguous split-channel output before executing the tool.
+
+# 2026-08-04 - A digest proves identity, not authority
+
+- Never authorize caller-supplied review thresholds merely because the caller also supplies their matching digest. Keep default policy authoritative, and accept calibrated policy only through module-issued provenance that enforces calibration-phase constraints.
+- Never trust a caller-supplied `testSplitStarted` or phase boolean. Calibration/review phase must live in module-owned irreversible session state, and the first review must close calibration for that session.
+
+# 2026-08-04 - Rebuild evidence after a completion claim is corrected
+
+- Treat prior evidence as stale after a verifier finds a release-path gap. Re-run the real surface, overwrite the claimed verdict with current counts, retain the failed attempt explicitly, and scan the final evidence tree for empty files before making a new completion claim.
+- Before repeating a completion claim after a stop-hook challenge, the owning agent must directly execute the live focused suite, real-surface regression, static gates, plan/ledger audit, and cleanup scan, then record those observed exits and outputs in a new evidence receipt. A delegated verifier report alone is input, not the owner's proof.
+
+# 2026-08-04 - File existence is not raster-review authority
+
+- A production default raster stage must decode and measure each page, then delegate thresholds and lineage to the authoritative raster-review policy. Existing bytes at a `.png` path are not evidence of a reviewed image; invalid/truncated/non-A4 pages must return a hard unreadable finding before structured tools or publication.
+# 2026-08-05 - Keep npm bootstrap doctor checks distinct from standalone bundles
+
+- An npm package can intentionally carry root notices, SBOM, and source metadata while downloading pinned runtime apps whose fonts live inside the app bundle; doctor must branch on the declared package kind instead of treating missing standalone `THIRD_PARTY` assets as an install failure.
+- Official runtime version probes may be strict banners rather than bare strings. Accept only the documented tool-specific banner on the expected channel, preserve inventory equality, and continue rejecting conflicting stderr or forged output.

@@ -1,16 +1,29 @@
-import { randomUUID } from "node:crypto";
-import { lstat, mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import pino from "pino";
+import { z } from "zod";
+import { transcribeAudiverisPages } from "./audiveris-adapter";
 import { defaultMediaTools, runProcess, type MediaTools, type RunOptions } from "./media-tools";
+import { renderMuseScoreDocument } from "./musescore-adapter";
+import { reviewRasterPageFiles } from "./score-raster-review";
 import { deriveScoreQualitySidecarPath, serializeScoreExtractionQualityReport } from "./score-quality-report";
+import { loadScoreRuntimeManifest, resolveScoreRuntimeTarget, type ScoreRuntimeManifest, type ScoreRuntimePlatform } from "./score-runtime-manifest";
 import { ScorePipelineError, type ScoreJobInput, type ScoreJobProcessor, type ScoreJobProcessorContext, type ScoreJobResult } from "./job-contract";
 import { resolveScoreTimeRange, type ResolvedScoreTimeRange, type ScoreTimeRange } from "./score-time-range";
-import { createScorePdfFromFrames, listExtractedFrames } from "./score-video-processor";
+import { createScorePdfFromFrames, listExtractedFrames, type CreateScorePdfOptions } from "./score-video-processor";
 
 const logger = pino({ name: "yt2sheet-cli", level: process.env.YT2SHEET_LOG_LEVEL?.trim() || "info" });
 const MAX_DURATION_SECONDS = 2 * 60 * 60;
 const MAX_EXTRACTED_FRAMES = 3_600;
+
+export type ReviewedPipeline = NonNullable<CreateScorePdfOptions["reviewedPipeline"]>;
+
+export type ReviewedPipelineFactory = (request: {
+  readonly runtimeRoot: string;
+  readonly assetRoot: string;
+}) => Promise<ReviewedPipeline>;
 
 type ProcessorOptions = {
   readonly dataRoot: string;
@@ -21,6 +34,7 @@ type ProcessorOptions = {
   readonly pdfCreator?: typeof createScorePdfFromFrames;
   readonly sidecarWriter?: (path: string, contents: string) => Promise<void>;
   readonly sidecarRenamer?: (sourcePath: string, destinationPath: string) => Promise<void>;
+  readonly reviewedPipelineFactory?: ReviewedPipelineFactory;
 };
 
 type OwnedArtifact = {
@@ -89,6 +103,10 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
       if (frames.length === 0) {
         throw new ScorePipelineError("NO_FRAMES_EXTRACTED", "영상에서 분석할 프레임을 추출하지 못했습니다.");
       }
+      const reviewedPipeline = await (this.options.reviewedPipelineFactory ?? createInstalledReviewedPipeline)({
+        runtimeRoot: defaultRuntimeRoot(),
+        assetRoot: defaultAssetRoot()
+      });
       const result = await this.pdfCreator(frames, workDirectory, outputPath, {
         onProgress,
         signal,
@@ -105,12 +123,18 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
           sidecarArtifact = await captureOwnedArtifact(sidecarPath);
           throwIfCancelled(signal);
         },
+        reviewedPipeline,
         metadata: { videoId: input.videoId, createdAt: this.clock() }
       });
       pdfArtifact ??= await captureOwnedArtifact(outputPath);
       throwIfCancelled(signal);
       logger.info({ videoId: input.videoId, scoreCount: result.scoreCount, pageCount: result.pageCount }, "score job completed");
-      return { filePath: outputPath, pageCount: result.pageCount };
+      return {
+        filePath: outputPath,
+        pageCount: result.pageCount,
+        ...(result.reviewOutcome === undefined ? {} : { reviewOutcome: result.reviewOutcome }),
+        ...(result.warnings === undefined ? {} : { warnings: result.warnings })
+      };
     } catch (error) {
       failed = true;
       await Promise.allSettled([
@@ -216,6 +240,107 @@ export class YouTubeScoreProcessor implements ScoreJobProcessor {
   }
 }
 
+export type LocalVideoJobInput = Readonly<{
+  readonly videoPath: string;
+  readonly videoId: string;
+  readonly durationMs?: number;
+  readonly timeRange?: ScoreTimeRange;
+}>;
+
+export type LocalVideoProcessorOptions = Readonly<{
+  readonly dataRoot: string;
+  readonly tools?: Pick<MediaTools, "ffmpeg" | "ffprobe">;
+  readonly clock?: () => Date;
+  readonly processRunner?: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
+  readonly frameLister?: typeof listExtractedFrames;
+  readonly pdfCreator?: typeof createScorePdfFromFrames;
+  readonly reviewedPipelineFactory?: () => Promise<ReviewedPipeline | undefined>;
+  readonly frameArtifactSink?: (framePaths: readonly string[]) => Promise<void>;
+}>;
+
+export class LocalVideoScoreProcessor {
+  private readonly tools: Pick<MediaTools, "ffmpeg" | "ffprobe">;
+  private readonly clock: () => Date;
+  private readonly processRunner: (executable: string, args: readonly string[], options?: RunOptions) => Promise<string>;
+  private readonly frameLister: typeof listExtractedFrames;
+  private readonly pdfCreator: typeof createScorePdfFromFrames;
+
+  constructor(private readonly options: LocalVideoProcessorOptions) {
+    this.tools = options.tools ?? { ffmpeg: defaultMediaTools.ffmpeg, ffprobe: defaultMediaTools.ffprobe };
+    this.clock = options.clock ?? (() => new Date());
+    this.processRunner = options.processRunner ?? runProcess;
+    this.frameLister = options.frameLister ?? listExtractedFrames;
+    this.pdfCreator = options.pdfCreator ?? createScorePdfFromFrames;
+  }
+
+  async process(input: LocalVideoJobInput, context: ScoreJobProcessorContext): Promise<ScoreJobResult> {
+    const videoPath = resolve(input.videoPath);
+    if (!isAbsolute(input.videoPath) || input.videoPath.includes("://")) {
+      throw new ScorePipelineError("INVALID_LOCAL_VIDEO", "로컬 영상 경로를 확인할 수 없습니다.");
+    }
+    const runId = randomUUID();
+    const workDirectory = join(this.options.dataRoot, "work", `local-worker-${process.pid}-${runId}`);
+    const frameDirectory = join(workDirectory, "frames");
+    const resultDirectory = join(this.options.dataRoot, "results");
+    const outputPath = join(resultDirectory, `benchmark-result-p${process.pid}-${runId}.pdf`);
+    let failed = false;
+    try {
+      throwIfCancelled(context.signal);
+      const sourceStats = await lstat(videoPath).catch(() => null);
+      if (sourceStats === null || sourceStats.isSymbolicLink() || !sourceStats.isFile()) {
+        throw new ScorePipelineError("INVALID_LOCAL_VIDEO", "로컬 영상 경로를 확인할 수 없습니다.");
+      }
+      await mkdir(frameDirectory, { recursive: true });
+      await mkdir(resultDirectory, { recursive: true });
+      const probedDuration = Number((await this.processRunner(this.tools.ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nk=1:nw=1", videoPath], { signal: context.signal })).trim());
+      const duration = Number.isFinite(probedDuration) && probedDuration > 0 ? probedDuration : (input.durationMs === undefined ? NaN : input.durationMs / 1_000);
+      if (!Number.isFinite(duration) || duration <= 0 || duration > MAX_DURATION_SECONDS) {
+        throw new ScorePipelineError("INVALID_LOCAL_VIDEO", "로컬 영상 길이를 확인할 수 없습니다.");
+      }
+      const range = resolveScoreTimeRange(input.timeRange, duration);
+      if (range.kind === "invalid") throw new ScorePipelineError("INVALID_TIME_RANGE", "요청한 시간 범위를 확인해 주세요.");
+      context.onTimeRangeResolved?.(range);
+      context.onProgress(12);
+      const extractionArguments = buildFrameExtractionArguments(videoPath, frameDirectory, range);
+      if (/\.(?:svg|png|jpe?g)$/iu.test(videoPath)) {
+        extractionArguments.unshift("-loop", "1");
+        const filterIndex = extractionArguments.indexOf("-vf");
+        extractionArguments.splice(filterIndex < 0 ? extractionArguments.length : filterIndex, 0, "-t", String(range.sampleDurationSec));
+      }
+      extractionArguments.splice(extractionArguments.length - 1, 0, "-pix_fmt", "yuvj420p");
+      await this.processRunner(this.tools.ffmpeg, extractionArguments, { signal: context.signal });
+      throwIfCancelled(context.signal);
+      context.onProgress(45);
+      const frames = await this.frameLister(frameDirectory);
+      if (frames.length === 0) throw new ScorePipelineError("NO_FRAMES_EXTRACTED", "영상에서 분석할 프레임을 추출하지 못했습니다.");
+      await this.options.frameArtifactSink?.(frames);
+      const reviewedPipeline = await this.options.reviewedPipelineFactory?.();
+      const result = await this.pdfCreator(frames, workDirectory, outputPath, {
+        onProgress: context.onProgress,
+        signal: context.signal,
+        reviewedPipeline: reviewedPipeline === undefined ? undefined : { stages: reviewedPipeline.stages },
+        metadata: { videoId: input.videoId, createdAt: this.clock() }
+      });
+      throwIfCancelled(context.signal);
+      return {
+        filePath: outputPath,
+        pageCount: result.pageCount,
+        reviewOutcome: result.reviewOutcome ?? "raster-fallback",
+        ...(result.warnings === undefined ? {} : { warnings: result.warnings })
+      };
+    } catch (error) {
+      failed = true;
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      if (error instanceof ScorePipelineError) throw error;
+      throw new ScorePipelineError("MEDIA_PROCESSING_FAILED", "로컬 영상을 처리하지 못했습니다.", { cause: error });
+    } finally {
+      const cleanup = rm(workDirectory, { recursive: true, force: true });
+      if (failed) await Promise.allSettled([cleanup]);
+      else await cleanup;
+    }
+  }
+}
+
 async function captureOwnedArtifact(path: string): Promise<OwnedArtifact | null> {
   try {
     const stats = await lstat(path, { bigint: true });
@@ -296,6 +421,109 @@ function toYouTubeAccessBlockedError(error: unknown): ScorePipelineError | null 
 
 function isFileSystemError(error: unknown): boolean {
   return error instanceof Error && "code" in error;
+}
+
+async function createInstalledReviewedPipeline(request: { readonly runtimeRoot: string; readonly assetRoot: string }): Promise<ReviewedPipeline> {
+  const manifest = await loadInstalledScoreRuntimeManifest(request.assetRoot);
+  const target = resolveDefaultRuntimeTarget(manifest);
+  const leland = manifest.tools.musescore.fonts.find((font) => font.family === "Leland");
+  const expectedLelandFontSha256 = leland === undefined ? "" : await digestDirectory(resolve(request.runtimeRoot, leland.bundledPath));
+  return {
+    stages: {
+      reviewRaster: async ({ pages, signal }) => reviewRasterPageFiles(pages, signal),
+      transcribe: ({ pages, signal }) => transcribeAudiverisPages({
+        manifest,
+        platformId: target.id,
+        runtimeRoot: request.runtimeRoot,
+        workspaceRoot: dirname(pages[0]?.path ?? request.runtimeRoot),
+        pages,
+        rasterSafe: true,
+        signal
+      }),
+      render: ({ pages, outputPath, signal }) => renderMuseScoreDocument({
+        manifest,
+        releaseTarget: target.releaseTarget,
+        osVersion: target.osVersion,
+        bundleRoot: request.runtimeRoot,
+        assetRoot: request.assetRoot,
+        expectedLelandFontSha256,
+        outputPath,
+        pages,
+        signal
+      })
+    }
+  };
+}
+
+async function loadInstalledScoreRuntimeManifest(assetRoot: string): Promise<ScoreRuntimeManifest> {
+  const candidates = [
+    resolve(assetRoot, "scripts/score-runtime-manifest.json"),
+    resolve(assetRoot, "app/scripts/score-runtime-manifest.json"),
+    resolve(process.cwd(), "scripts/score-runtime-manifest.json")
+  ];
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return await loadScoreRuntimeManifest(candidate);
+    } catch (error) {
+      if (!isFileSystemError(error)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error("score runtime manifest is unavailable");
+}
+
+function resolveDefaultRuntimeTarget(manifest: ScoreRuntimeManifest): ScoreRuntimePlatform {
+  const releaseTarget = process.platform === "darwin"
+    ? process.arch === "arm64" ? "darwin-arm64" : "darwin-x64"
+    : process.platform === "win32" ? "windows-x64" : "linux-x64";
+  const candidates = manifest.platforms.filter((platform) => platform.releaseTarget === releaseTarget);
+  if (candidates.length === 1) {
+    const target = candidates[0];
+    if (target !== undefined) return target;
+  }
+  return resolveScoreRuntimeTarget(manifest, releaseTarget);
+}
+
+async function digestDirectory(root: string): Promise<string> {
+  try {
+    const files = await directoryFiles(root);
+    const hash = createHash("sha256");
+    for (const file of files) hash.update(relative(root, file).split(sep).join("/")).update("\0").update(await readFile(file));
+    return files.length === 0 ? "" : hash.digest("hex");
+  } catch (error) {
+    if (isFileSystemError(error)) return "";
+    throw error;
+  }
+}
+
+async function directoryFiles(root: string): Promise<readonly string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const path = join(root, entry.name);
+    const stats = await lstat(path);
+    if (stats.isSymbolicLink()) throw new TypeError("runtime-font-symlink");
+    if (stats.isDirectory()) files.push(...await directoryFiles(path));
+    else if (stats.isFile()) files.push(path);
+  }
+  return files.sort();
+}
+
+function defaultRuntimeRoot(): string {
+  const configured = process.env.YT2SHEET_RUNTIME_ROOT?.trim();
+  if (configured) return resolve(configured);
+  const executable = process.argv[1];
+  const candidates = [
+    process.cwd(),
+    ...(executable === undefined ? [] : [resolve(dirname(executable), "..", "..", ".."), resolve(dirname(executable), "..", "..")])
+  ];
+  return candidates.find((candidate) => existsSync(join(candidate, "tools"))) ?? resolve(process.cwd());
+}
+
+function defaultAssetRoot(): string {
+  const configured = process.env.YT2SHEET_ASSET_ROOT?.trim();
+  return configured ? resolve(configured) : defaultRuntimeRoot();
 }
 
 export function buildFrameExtractionArguments(

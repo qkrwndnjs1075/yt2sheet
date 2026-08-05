@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "yt2sheet-third-party-compliance/1",
+  "product": {
+    "name": "yt2sheet",
+    "version": "0.2.18",
+    "purl": "pkg:npm/yt2sheet@0.2.18"
+  },
+  "coveredRoots": ["runtime/jre", "tools/audiveris", "tools/musescore", "tools/native"],
+  "components": [
+    {
+      "bomRef": "pkg:generic/audiveris@5.11.0",
+      "name": "Audiveris",
+      "version": "5.11.0",
+      "type": "application",
+      "purl": "pkg:generic/audiveris@5.11.0",
+      "license": { "spdx": "AGPL-3.0-only", "path": "THIRD_PARTY/licenses/Audiveris-LICENSE", "sha256": "76a97c878c9c7a8321bb395c2b44d3fe2f8d81314d219b20138ed0e2dddd5182", "sourceUrl": "https://raw.githubusercontent.com/Audiveris/audiveris/9e1e55cd2746037d059345881c53e6a6754bffbd/LICENSE" },
+      "notices": [],
+      "bundledFiles": [{ "path": "tools/audiveris/Audiveris.jar", "sha256": "2ce26689332281e88d0f28dbc78620c3cb54aa0131ab9c4668494c2c5cc450de" }],
+      "source": { "kind": "archive", "repositoryUrl": "https://github.com/Audiveris/audiveris", "commit": "9e1e55cd2746037d059345881c53e6a6754bffbd", "assetPath": "THIRD_PARTY/sources/audiveris-9e1e55cd2746037d059345881c53e6a6754bffbd.tar.gz", "sha256": "63a8e23aca89d8cff13b1ae54f8f256f334672f10ae5d7cb7477687396b86ce1" },
+      "dependencies": ["pkg:generic/temurin@21.0.8%2B9"]
+    },
+    {
+      "bomRef": "pkg:generic/musescore@4.7.4",
+      "name": "MuseScore",
+      "version": "4.7.4",
+      "type": "application",
+      "purl": "pkg:generic/musescore@4.7.4",
+      "license": { "spdx": "GPL-3.0-only", "path": "THIRD_PARTY/licenses/MuseScore-LICENSE.txt", "sha256": "73e75f61f0dfce4fd83ad1f3f45d1d6f9ea8cdfd21a92d7a9216d47e5b3bbb88", "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/LICENSE.txt" },
+      "notices": [],
+      "bundledFiles": [{ "path": "tools/musescore/MuseScore", "sha256": "21f99d32b9b3e5f89ec3f297e627d4bf6a427928c9fb29d074b29f13b189f9d0" }],
+      "source": { "kind": "archive", "repositoryUrl": "https://github.com/musescore/MuseScore", "commit": "7688c005ad963ba09ee715aae53dbc7e8c9d5ef8", "assetPath": "THIRD_PARTY/sources/musescore-7688c005ad963ba09ee715aae53dbc7e8c9d5ef8.tar.gz", "sha256": "51dfd45edda20ed8cb6d8aa671fa9950a645c76ee71659138f60acf7649fd9f3" },
+      "dependencies": ["pkg:generic/bravura@1.392", "pkg:generic/leland@0.80"]
+    },
+    {
+      "bomRef": "pkg:generic/temurin@21.0.8%2B9",
+      "name": "Eclipse Temurin JRE",
+      "version": "21.0.8+9",
+      "type": "framework",
+      "purl": "pkg:generic/temurin@21.0.8%2B9",
+      "license": { "spdx": "GPL-2.0-only WITH Classpath-exception-2.0", "path": "THIRD_PARTY/licenses/Temurin-LICENSE", "sha256": "ab655ddc33e4f745c9d44cfd498a4be01fb1514d784d4a381bf5c3aaf6414cd7", "sourceUrl": "https://github.com/adoptium/temurin21-binaries/blob/jdk-21.0.8%2B9/LICENSE" },
+      "notices": [{ "path": "THIRD_PARTY/notices/Temurin-NOTICE", "sha256": "8b2345213d8ef28572af0131c63d2e6b869a2a2012f0ab44888b3c2bb0c48fe3" }],
+      "bundledFiles": [{ "path": "runtime/jre/bin/java", "sha256": "f239ffb6fbe01fd995408380ebce5d818c6e315384ff358b4e916a6258d98eaf" }],
+      "source": { "kind": "manifest", "repositoryUrl": "https://github.com/adoptium/temurin21-binaries", "commit": "1111111111111111111111111111111111111111", "assetPath": "THIRD_PARTY/sources/temurin-21.0.8+9-source-manifest.json", "sha256": "b59c9515c46edc785f1d6383bab31f503fd5df3c0585daa7e3fa1fe882027e32" },
+      "dependencies": []
+    },
+    {
+      "bomRef": "pkg:generic/example-native@1.0.0",
+      "name": "Example native library",
+      "version": "1.0.0",
+      "type": "library",
+      "purl": "pkg:generic/example-native@1.0.0",
+      "license": { "spdx": "MIT", "path": "THIRD_PARTY/licenses/Native-LICENSE", "sha256": "f362fb47c201926d0356660d2b4c39c2d6c6d67e911c0d5d713587f0ac6a4205", "sourceUrl": "https://example.invalid/native/LICENSE" },
+      "notices": [{ "path": "THIRD_PARTY/notices/Native-NOTICE", "sha256": "5fc84565e9961c6a1f963f83eebbd315cfdeb0c6a1b35ca5f05c71238cdcd53e" }],
+      "bundledFiles": [{ "path": "tools/native/libexample.so", "sha256": "a97d67396a98cf441b780f6163e512954e42af22c28c95f7d73b38aef60a7f8a" }],
+      "source": { "kind": "submodule-manifest", "repositoryUrl": "https://example.invalid/native", "commit": "2222222222222222222222222222222222222222", "assetPath": "THIRD_PARTY/sources/native-submodule-manifest.json", "sha256": "7bb212a5a55f7780c64489706419d9ab069c18fb15203f3858650ea14e681b31" },
+      "dependencies": []
+    },
+    {
+      "bomRef": "pkg:generic/bravura@1.392",
+      "name": "Bravura",
+      "version": "1.392",
+      "type": "library",
+      "purl": "pkg:generic/bravura@1.392",
+      "license": { "spdx": "OFL-1.1", "path": "THIRD_PARTY/fonts/Bravura-OFL.txt", "sha256": "c24929be7028026a65ee8894da1e3c36d2a4ccce0548d9ba8ba64509f46319ee", "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/bravura/OFL.txt" },
+      "notices": [],
+      "bundledFiles": [{ "path": "tools/musescore/fonts/bravura/Bravura.otf", "sha256": "adbc2d665e38906c022ff159dcbea5c163ef68a908d224920e8b2d2341aa37c2" }],
+      "source": { "kind": "manifest", "repositoryUrl": "https://github.com/steinbergmedia/bravura", "commit": "3333333333333333333333333333333333333333", "assetPath": "THIRD_PARTY/sources/bravura-source-manifest.json", "sha256": "f60d8a011678fed2f344a8ace962af10662488b46d29daa47fcea886cdddb03b" },
+      "dependencies": []
+    },
+    {
+      "bomRef": "pkg:generic/leland@0.80",
+      "name": "Leland",
+      "version": "0.80",
+      "type": "library",
+      "purl": "pkg:generic/leland@0.80",
+      "license": { "spdx": "OFL-1.1", "path": "THIRD_PARTY/fonts/Leland-LICENSE.txt", "sha256": "eb60b6a7d8c70b05c9fbd6f257e725ec2bc161cc82e78e299a34344ac9c4c1bb", "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/leland/LICENSE.txt" },
+      "notices": [],
+      "bundledFiles": [{ "path": "tools/musescore/fonts/leland/Leland.otf", "sha256": "af99bcbe7866123499b8f79ac4d4a18a8474e4d2e2405d8b92959ca41860c621" }],
+      "source": { "kind": "manifest", "repositoryUrl": "https://github.com/musescore/MuseScore", "commit": "7688c005ad963ba09ee715aae53dbc7e8c9d5ef8", "assetPath": "THIRD_PARTY/sources/leland-source-manifest.json", "sha256": "110795d9e5106996a1e698a1fec56522f03f2c96eebdfe06f4b179f3654f64af" },
+      "dependencies": []
+    }
+  ]
+}

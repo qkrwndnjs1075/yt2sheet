@@ -1,5 +1,5 @@
 import { STANDALONE_SCORE_PDF } from "./score-identity-config";
-import type { ScorePdfPageLayout } from "./score-identity-config";
+import type { ScoreRasterPageLayout } from "./score-identity-config";
 
 export type ScoreImageSize = {
   readonly width: number;
@@ -13,23 +13,23 @@ export type ScoreImagePlacement = {
   readonly height: number;
 };
 
-export type ScorePageLayoutConfig = ScorePdfPageLayout;
+export type ScorePageLayoutConfig = ScoreRasterPageLayout;
 
 type SizedScore = {
   readonly image: ScoreImageSize;
 };
 
 export function packScorePages<T extends SizedScore>(scores: readonly T[], layout: ScorePageLayoutConfig = STANDALONE_SCORE_PDF): T[][] {
-  const { pageWidth, pageHeight, padding, gap } = layout;
-  const contentWidth = pageWidth - padding * 2;
-  const contentHeight = pageHeight - padding * 2;
+  const { rasterWidth, rasterHeight, contentMarginPixels, interSheetGapPixels } = layout;
+  const contentWidth = rasterWidth - contentMarginPixels * 2;
+  const contentHeight = rasterHeight - contentMarginPixels * 2;
   const pages: T[][] = [];
   let page: T[] = [];
   let usedHeight = 0;
 
   for (const score of scores) {
     const fittedHeight = fitToContentWidth(score.image, contentWidth).height;
-    const requiredHeight = fittedHeight + (page.length > 0 ? gap : 0);
+    const requiredHeight = fittedHeight + (page.length > 0 ? interSheetGapPixels : 0);
 
     if (page.length > 0 && usedHeight + requiredHeight > contentHeight) {
       pages.push(page);
@@ -37,7 +37,7 @@ export function packScorePages<T extends SizedScore>(scores: readonly T[], layou
       usedHeight = 0;
     }
 
-    usedHeight += fittedHeight + (page.length > 0 ? gap : 0);
+    usedHeight += fittedHeight + (page.length > 0 ? interSheetGapPixels : 0);
     page.push(score);
   }
 
@@ -49,16 +49,16 @@ export function packScorePages<T extends SizedScore>(scores: readonly T[], layou
 }
 
 export function computeScorePagePlacements(imageSizes: ScoreImageSize[], layout: ScorePageLayoutConfig = STANDALONE_SCORE_PDF): ScoreImagePlacement[] {
-  const { pageWidth, pageHeight, padding, gap } = layout;
-  const contentWidth = pageWidth - padding * 2;
-  const contentHeight = pageHeight - padding * 2;
+  const { rasterWidth, rasterHeight, contentMarginPixels, interSheetGapPixels } = layout;
+  const contentWidth = rasterWidth - contentMarginPixels * 2;
+  const contentHeight = rasterHeight - contentMarginPixels * 2;
 
   if (imageSizes.length === 0) {
     return [];
   }
 
   const widthFit = imageSizes.map((size) => fitToContentWidth(size, contentWidth));
-  const totalGap = gap * Math.max(0, imageSizes.length - 1);
+  const totalGap = interSheetGapPixels * Math.max(0, imageSizes.length - 1);
   const totalHeight = widthFit.reduce((sum, size) => sum + size.height, 0) + totalGap;
   const compression = totalHeight > contentHeight
     ? Math.max(1, contentHeight - totalGap) / Math.max(1, totalHeight - totalGap)
@@ -67,18 +67,18 @@ export function computeScorePagePlacements(imageSizes: ScoreImageSize[], layout:
   const groupHeight = renderedHeight + totalGap;
 
   const placements: ScoreImagePlacement[] = [];
-  let y = padding;
+  let y = contentMarginPixels;
 
   for (const size of widthFit) {
     const width = size.width * compression;
     const height = size.height * compression;
     placements.push({
-      x: padding + (contentWidth - width) / 2,
+      x: contentMarginPixels + (contentWidth - width) / 2,
       y,
       width,
       height
     });
-    y += height + gap;
+    y += height + interSheetGapPixels;
   }
 
   return placements;

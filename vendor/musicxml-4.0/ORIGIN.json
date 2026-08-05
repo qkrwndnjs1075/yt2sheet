@@ -1,0 +1,15 @@
+{
+  "origin": "https://github.com/w3c/musicxml",
+  "commit": "799e2defb2ece0ae7bafe08dcbcac25b2c631d53",
+  "upstreamVersionDeclaration": "4.0",
+  "sourceDirectory": "schema",
+  "retrievedAt": "2026-08-04",
+  "files": {
+    "container.xsd": "deddcc2f51e856de21397bbe25e2cf304ca9e3253b0d25dcc6349c390bc22fa6",
+    "musicxml.xsd": "bfe37ed25a9ec00e6f2591d53df260b84efe12aed209ba3ac0a76f9287665a99",
+    "opus.xsd": "e8256607b9255075f16c1d70ed53f8384ab6e3b9dc4c1f81291cdd1d56b0474a",
+    "sounds.xsd": "a3a423bcdf9f385f74d6bdf6024f7a29e70c4745de4825d33327f903124533e1",
+    "xlink.xsd": "6e601f8eeb41618b50e4c7f944dff754e57ea43b602755470dda24c9c2f6df92",
+    "xml.xsd": "616a3077df5cfc954ac74a75abe9697b95eef7a85dbe09367d995a483e840eb5"
+  }
+}

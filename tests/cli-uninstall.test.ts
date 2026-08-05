@@ -18,8 +18,13 @@ test("removes a Unix standalone fixture and only its installer PATH line", async
   await mkdir(join(installRoot, "runtime"));
   await mkdir(join(installRoot, "bin"));
   await mkdir(join(installRoot, "tools"));
+  await mkdir(join(installRoot, "tools", "audiveris"));
+  await mkdir(join(installRoot, "tools", "musescore"));
+  await mkdir(join(installRoot, "THIRD_PARTY"));
   await mkdir(binDirectory, { recursive: true });
   await writeFile(join(installRoot, "VERSION"), "yt2sheet 0.2.0 linux-x64\n", "utf8");
+  await writeFile(join(installRoot, "THIRD_PARTY_NOTICES.md"), "owned notices\n", "utf8");
+  await writeFile(join(installRoot, "bom.cdx.json"), "{}\n", "utf8");
   await writeFile(entryPoint, "", "utf8");
   await writeFile(join(installRoot, "bin", "yt2"), "#!/bin/sh\n", "utf8");
   try {

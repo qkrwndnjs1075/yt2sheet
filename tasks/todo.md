@@ -1,3 +1,50 @@
+# Release cli-v0.2.19 (2026-08-05)
+
+## Plan
+
+- [x] Prepare the 0.2.19 patch version and release-only worktree while preserving local PDF/npm artifacts.
+- [x] Run the release verification and exact package/CLI smoke checks.
+- [ ] Commit the reviewed source, tests, runtime metadata, and task evidence.
+- [ ] Push the branch, merge the PR, and push the cli-v0.2.19 tag.
+- [ ] Confirm the GitHub release assets and the installed user path.
+
+## Review
+
+- Scope: standards-based score review, high-resolution Audiveris transcription input, runtime staging/doctor compatibility, and their regression/evidence records.
+- Excluded: `.DS_Store`, `yt2sheet-0.2.18.tgz`, and generated PDF outputs from the user's local smoke test.
+
+# Audiveris OMR probe diagnosis and repair (2026-08-05)
+
+## Plan
+
+- [x] Reproduce the user's `OMR_UNAVAILABLE` result against the installed Audiveris runtime and the supplied PDF.
+- [x] Add a failing regression for the official multiline Audiveris version banner.
+- [x] Accept the pinned `- Version: 5.11.0` banner while retaining strict stderr/version checks.
+- [x] Run the full verification suite and a real installed-runtime transcription probe.
+
+## Review
+
+- Root cause: the adapter required Audiveris stdout to equal the bare string `5.11.0`, but the official binary emits a Tesseract startup line and a multiline `- Version: 5.11.0` banner. The adapter therefore returned `OMR_UNAVAILABLE` before processing any page.
+- Fix: `pipeline/audiveris-adapter.ts` now recognizes only the exact pinned version line or the legacy bare version, and still rejects any stderr output.
+- RED/GREEN: the new official-banner test failed with `raster-fallback` before the fix and passed with structured transcription after it.
+- Verification: `npm run verify` passed with 363 tests passing, 0 failing, and 3 skipped; the real runtime probe now reaches page transcription. The supplied 145 DPI raster then produces a separate `OMR_FAILED` because Audiveris reports a 7-pixel interline and ignores the sheet, so that artifact remains correctly selected as raster fallback.
+
+# npm bootstrap runtime/doctor repair (2026-08-05)
+
+## Plan
+
+- [x] Reproduce the real postinstall and offline doctor failures from the packed npm artifact.
+- [x] Lock the package asset shape and official runtime-banner behavior with failing-first doctor tests.
+- [x] Make doctor accept npm-bootstrap runtime fonts and compliance metadata while retaining standalone checks.
+- [x] Rebuild, repack, reinstall globally, and run the real PATH-resolved `yt2 doctor --offline` surface.
+
+## Review
+
+- Root cause: runtime staging succeeded, but doctor assumed standalone-only `tools/musescore/fonts/*` and `COMPLIANCE_SUMMARY.json`; it also required Audiveris to print a bare version even though the official binary prints a strict multiline banner.
+- Fix: doctor now recognizes the checked-in `npm-bootstrap` package shape, verifies Bravura/Leland inside the pinned MuseScore runtime tree, keeps root SBOM/source/notice checks, and parses only the documented Audiveris/MuseScore banner forms with exact stdout/stderr discipline.
+- RED/GREEN: the new npm bootstrap fixture failed before the fix (6 pass, 1 fail) and passed after it (7 pass, 0 fail). Full verification passed with 365 tests (362 pass, 0 fail, 3 skips), typecheck, release-candidate tests, and CLI build.
+- Real npm QA: rebuilt `yt2sheet-0.2.18.tgz`, installed it globally, and observed `yt2sheet 0.2.18` plus `결과: READY WITH WARNINGS` from the new global CLI. The warning is limited to optional cookies and the intentional `--offline` network skip.
+
 # Complete score preservation after deduplication (2026-08-01)
 
 ## Plan
@@ -2121,3 +2168,106 @@
 - Public `cli-v0.2.17` installer QA exposed a real standalone-runtime defect: the launcher supplied bundled `YT_DLP_PATH`, but yt-dlp still received the literal `node` JS runtime. A clean PATH therefore made doctor fail even though the bundle contained Node.
 - `scripts/build-bundle.mjs` now exports the platform-specific bundled Node path for Unix and CMD launchers; the PowerShell launcher sets and restores `YT_DLP_JS_RUNTIME` alongside the existing environment values.
 - `npm run typecheck`, `npm run build:cli`, `npm run build:test`, `node --test build-test/tests/installer-scripts.test.js`, and `git diff --check` passed. The regenerated bundle reports the embedded runtime path and passes its JS-runtime check under a PATH without system Node; local ffmpeg/ffprobe packaging failures remain host-specific and pre-existing.
+# Secure offline MusicXML/MXL validation (Todo 4, 2026-08-04)
+
+## Plan
+
+- [x] Capture a failing-first compiled validator test before implementation.
+- [x] Pin validator dependencies and vendor only the pinned MusicXML 4.0 schemas with provenance hashes.
+- [x] Implement offline XSD validation and bounded, allowlisted MXL extraction.
+- [x] Add happy-path and adversarial fixtures/tests for XML, schema, ZIP, and repeat-validation behavior.
+- [x] Run focused compiled tests, typecheck, offline canary QA, negative matrix, hash inventory, and cleanup proof.
+
+## Review
+
+- RED: compiled test failed on the absent `pipeline/musicxml-validator` import; receipt is in the task evidence directory.
+- GREEN: 23 compiled focused tests passed, including physical archive byte limits, strict 4.0 version rejection, partwise/timewise/MXL, 12 concurrent repeats, provenance hashes, and 15 unsafe archive variants.
+- Offline QA: both local HTTP canaries received zero requests and closed cleanly. Peak focused-suite RSS was 113,704,960 bytes.
+- The corrected official MusicXML v4.0 tag commit `799e2defb2ece0ae7bafe08dcbcac25b2c631d53` supplies all six vendored XSD files, and each local digest matches its pinned raw source.
+- The compiled package validates from an unrelated working directory using only its package-relative, integrity-checked schema assets.
+- Full project typecheck passed. The validator performs no archive filesystem extraction and libxml2 resource providers are allowlisted and disposed after each serialized validation.
+
+# Audiveris page-to-MXL adapter (Todo 7, 2026-08-04)
+
+## Plan
+
+- [x] Capture the absent-adapter RED and characterize Todo 5 runner argv/collection/cleanup behavior.
+- [x] Implement manifest-only executable resolution, exact 5.11.0 probing, ordered isolated page conversion, hashing, lineage, and safe log evidence.
+- [x] Validate every candidate through Todo 4 and map tool/output/validation failures to exact raster-fallback warning evidence.
+- [x] Exercise deterministic two-page success, adversarial output, wrong-version, timeout/cancel/nonzero, malformed input, ordering, and cleanup scenarios.
+- [x] Run focused compile/tests, typecheck, no-excuse/LOC review, and record Task 9/15 native packaged-smoke deferral.
+
+## Review
+
+- RED: `npm run build:test` failed only because `pipeline/audiveris-adapter` was absent.
+- The adapter resolves the staged Audiveris executable from the parsed manifest/platform record, probes exact `5.11.0`, then runs pages serially with `-batch -export -output audiveris-output -- <absolute-page.png>` inside fresh Todo 5 workspaces.
+- Successful records retain page/frame/score lineage, SHA-256 input/output digests, version, duration, exit status, bounded log metadata, and validator-approved MXL bytes. Raw tool logs and failed candidate paths/bytes are not returned.
+- Failure coverage proves exact raster-fallback evidence for missing/wrong tools, zero/two/traversal outputs, unsafe MXL, timeout, cancellation, nonzero exit, malformed page names, and nonmonotonic lineage. Stale sibling MXL files are preserved but never collected.
+- Independent review found and the adapter now rejects split-channel probes where stdout reports `5.11.0` but stderr is nonempty or conflicting; version evidence records only channel hashes, never raw untrusted output.
+- Focused compile, typecheck, 41 adapter/runner/validator tests, diff check, and post-cancel/timeout cleanup scan passed. The skill checker requires TypeScript 7 unstable APIs unavailable in this TypeScript 5.7 project; an equivalent forbidden-pattern scan was empty. `pipeline/audiveris-adapter.ts` is in the 200-250 LOC warning band and should be split before future feature growth.
+- Actual packaged native Audiveris execution was intentionally not claimed here; it remains a Task 9/15 release-matrix requirement after runtimes are staged.
+# Todo 10 — Third-party compliance artifact generation (2026-08-04)
+
+## Plan
+
+- [x] Record a failing CLI scenario while the compliance generator is absent.
+- [x] Add a deterministic manifest/bundle fixture covering Audiveris, MuseScore, JRE, native code, Bravura, and Leland.
+- [x] Generate verified license/notice copies, source-release assets and manifest, `THIRD_PARTY_NOTICES.md`, and CycloneDX 1.7 JSON.
+- [x] Fail closed on missing OFL text, altered purl, missing source mapping, invalid SPDX, ISO normative PDFs, malformed paths, and stale output state.
+- [x] Validate the SBOM against the official CycloneDX 1.7 schemas and prove repeatable hashes/counts.
+- [x] Derive production compliance from the pinned runtime manifest and current package lock, and invoke it from release-bundle staging.
+
+## Review
+
+- Added a manifest-driven generator that inventories every file under declared runtime roots and every license, notice, font notice, and source-release asset under `THIRD_PARTY`, then verifies pinned SHA-256 identities before atomically replacing output with rollback protection.
+- The deterministic fixture includes exact license bytes from the pinned Audiveris and MuseScore commits and exact Bravura/Leland OFL bytes. Live source-URL comparisons matched all four SHA-256 values.
+- Two independent fixture generations produced byte-identical trees with 14 components: 6 bundled components and all 8 direct `package.json` dependencies. Production-mode generation derived Audiveris, MuseScore, Bravura, and Leland records from `score-runtime-manifest.json`, retained exact runtime-asset hashes, discovered staged runtime notices, and emitted 12 total components including the 8 direct npm packages.
+- Release staging invokes the real production generator before the final staged-directory swap. A real-generator surface test proved the completed bundle contains `THIRD_PARTY`, `THIRD_PARTY_NOTICES.md`, `bom.cdx.json`, `SOURCE_MANIFEST.json`, and `COMPLIANCE_SUMMARY.json`; generation failure leaves the staged bundle unmodified.
+- Both fixture and production SBOMs passed the official CycloneDX 1.7 JSON schema plus its official SPDX, JSF, and cryptography referenced schemas. Focused positive/adversarial and real-stage tests passed 18/18; the runtime/bundle staging suite passed 23/23; typecheck, syntax, source-size, and diff checks passed. Independent review corrections now reject mutually forged tool/probe versions and report a simultaneous altered purl plus missing Bravura OFL in one blocked run.
+- Evidence: `.omo/evidence/standards-based-score-review-output/task-10-standards-based-score-review-output/`.
+
+# Todo 13 — Bundled runtime installation/bootstrap/uninstall (2026-08-04)
+
+## Plan
+
+- [x] Capture RED contracts for Ubuntu-only preflight, atomic standalone replacement, package-owned runtime bootstrap, and expanded uninstall cleanup.
+- [x] Make the POSIX and PowerShell installers validate the complete release tree and atomically replace only the owned install root after checksum/extraction/disk checks pass.
+- [x] Restrict Linux to Ubuntu 22.04/24.04 x64 before download and preserve macOS/Windows target selection.
+- [x] Make npm postinstall stage the pinned score-runtime manifest into the package root with hard failures; allow the skip flag only in CI/development.
+- [x] Exercise local release fixtures, negative preservation cases, npm bootstrap/skip/failure, uninstall cleanup, syntax/type checks, and record artifact-backed evidence.
+
+## Review
+
+- Both standalone installers now verify an exact 64-character archive digest, reject traversal/incomplete runtime-compliance trees, check disk headroom, stage beside the target, and restore the prior root on failure or interruption. Linux reads `/etc/os-release` before download and accepts only Ubuntu 22.04/24.04 x64.
+- npm postinstall ships and invokes the same pinned runtime manifest/stager under the package root. Runtime staging is the final mutating phase, failures are nonzero, its cache is removed, and `YT2SHEET_SKIP_TOOL_INSTALL=1` rejects normal user installs while explicitly leaving tools absent in CI/development for Todo 12 doctor enforcement.
+- Local release fixtures completed all seven stages plus version, offline doctor, and structured-smoke surfaces on macOS, Ubuntu 22.04, Ubuntu 24.04, and a PowerShell x64 container. The compiled uninstall path removed the Windows fixture root; Unix cleanup removed the expanded tool/compliance root while preserving unrelated profile content.
+- Negative checksum, corrupt extraction, disk exhaustion, signal interruption, unsupported Linux, and npm staging failure all returned nonzero and preserved exact prior hashes. Runtime staging regressions passed 29/29, including Windows/Ubuntu extraction, cancellation, timeout, corrupt-cache, budget, traversal, and prior-output rollback.
+- Focused gates passed: 7/7 installer/bootstrap scenarios, 4 applicable compiled installer/uninstall tests with 3 host skips, typecheck, shell syntax/ShellCheck, package dry-run contents, and scoped diff check. A full-suite attempt encountered concurrent Todo 11 quality-report schema assertions and a long-running score-tool-runner test; it was interrupted after the unrelated failures were captured.
+- Evidence: `.omo/evidence/standards-based-score-review-output/task-13-installers/`.
+
+# Todo 14 — Source-disjoint local benchmark promotion gate (2026-08-04)
+
+## Plan
+
+- [ ] Pin RED characterization for current `pipelineExecution: "not-run"` and bootstrap metrics.
+- [ ] Extend corpus/oracle schemas and loader integrity checks for generated rights, source groups, and ground-truth hashes.
+- [ ] Add local FFmpeg production execution and deterministic case artifact evidence.
+- [ ] Enforce source-disjoint split, oracle/disposition, execution, artifact, and bootstrap promotion gates.
+- [ ] Run focused compiled tests, typecheck/builds, real local benchmark, and cleanup/ultraqa evidence.
+
+# Follow-up — 300-DPI Audiveris transcription pages (2026-08-05)
+
+## Plan
+
+- [x] Capture RED: raster review/public PDF stay `1200x1697`, while transcription must receive temporary A4 `2480x3508` pages.
+- [x] Render high-resolution pages from the existing packed groups and route them only to transcription with preserved lineage.
+- [x] Remove temporary OMR pages on success, warning, failure, and cancellation without changing public output or warning taxonomy.
+- [x] Run focused tests three times, typecheck, CLI build, relevant suite, static audits, exact CLI QA, UltraQA probes, and cleanup receipt.
+
+## Review
+
+- RED failed only because transcription received `1200x1697`; the production change derives A4 `2480x3508`, 300-DPI layout values and supplies those temporary paths only to transcription.
+- Raster review and both reviewed-raster/final fallback PDFs remain `1200x1697` on A4 `595.276 x 841.89` points. Lineage is copied unchanged from the reviewed raster pages.
+- Focused orchestration passed 49/49; the resolution regression passed 3/3 repeated runs; full suite passed 368 with 0 failures and 3 skips; typecheck, CLI build, diff check, and TypeScript 7 no-excuse audit passed.
+- The exact YouTube CLI scenario exited 0 through all nine stages and produced a two-page parseable A4 raster fallback for unsafe MXL, with no low-resolution Audiveris rejection. Evidence is under `.omo/evidence/standards-based-score-review-output/followup-highres-omr/`.
+- Cleanup removed task-owned `/tmp` output/audit paths, restored the checkout-only ffprobe mode to `0644`, and found no residual `omr-pages` directories or task processes.

@@ -2,6 +2,7 @@
 
 import packageMetadata from "../package.json";
 import { ScorePipelineError } from "../pipeline/job-contract";
+import { scoreReviewContract, type ScoreReviewDecision } from "../pipeline/score-review-contract";
 import { formatResolvedScoreTimeRange } from "../pipeline/score-time-range";
 import { parseCliArguments } from "./arguments";
 import { formatDoctorReport, runDoctor } from "./doctor";
@@ -9,7 +10,12 @@ import { describeCliError, runCliJob } from "./job";
 import { formatCliUninstallOutcome, uninstallStandaloneCli } from "./uninstall";
 import { createCliProgressReporter, createYtDlpProgressReporter } from "./progress";
 
-const usage = `yt2 - Generate a sheet-music PDF from a YouTube video
+export type CliMainDependencies = {
+  readonly runJob?: typeof runCliJob;
+  readonly runDoctor?: typeof runDoctor;
+};
+
+const usage = `yt2sheet ${packageMetadata.version} - Generate a reviewed sheet-music PDF from a YouTube video
 
 Usage:
   yt2 <youtube-url> [options]
@@ -53,22 +59,46 @@ Time range:
 Output:
   Without --output, writes ./yt2sheet/yt2sheet-<videoId>.pdf in the current directory.
   Existing default files are preserved as yt2sheet-<videoId>-2.pdf, -3.pdf, and so on.
-  Videos are processed locally on your computer.
+  Success exposes one public PDF and no public sidecar; warnings go to stderr, not a JSON output.
+  The physical page is ISO 216 A4: 595.28 × 841.89 points. Its embedded raster is 1200 × 1697 raster pixels at 145.14 DPI.
+  Videos are processed locally on your computer after the source media is available.
+
+Review and publication:
+  The nine phases: info, download, extraction, raster analysis, raster review, OMR, MusicXML validation, engraving, and PDF publication.
+  structured approval publishes a validated engraved result. A structured-tool or validation warning selects a raster fallback only when the reviewed raster is safe.
+  A hard block (unsafe/unreadable/clipped raster, invalid final PDF, or publication failure) exits nonzero and publishes no new PDF.
+
+Supported bundled runtimes:
+  Standalone targets are Windows Server 2022 x64; macOS 14 x64 or arm64; and Ubuntu 22.04/24.04 x64 only.
+  Audiveris 5.11.0 and MuseScore 4.7.4 are bundled and pinned. Bootstrap caps each runtime archive at 750 MiB, installed runtimes at 2 GiB, and temporary extraction at 4 GiB.
+  npm installation bootstraps bundled tools over the network; it is not an offline install. After installation, local review and PDF generation support offline processing except for YouTube/source downloads.
 
 Doctor:
-  yt2 doctor checks the runtime, media tools, output directory, optional cookies,
-  a temporary local media/PDF smoke, and the yt-dlp release endpoint.
-  Add --offline to skip network checks. Doctor never installs tools or reads browser cookies.
+  yt2 doctor checks runtime manifest, Audiveris, MuseScore, MusicXML schemas, score fonts, license notices, SBOM, source manifest, and CLI probes,
+  plus media tools, output permissions, optional cookies, and a local PNG-to-MXL-to-PDF smoke.
+  Add --offline to skip release and source-network probes. Doctor never installs tools or reads browser cookies.
 
 Progress:
-  Interactive terminals redraw one staged progress line.
-  Piped output writes one stable line per stage to stderr; the final result stays on stdout.
+  Stages: the nine phases: info, download, extraction, raster analysis, raster review, OMR, MusicXML validation, engraving, and PDF publication.
+  Interactive terminals redraw one staged progress line; piped output writes one stable line per stage to stderr.
+  Successful processing writes only the final PDF path to stdout.
 
 Uninstall:
-  For an npm installation, run: npm uninstall -g yt2sheet
+  Standalone: yt2 uninstall. npm: npm uninstall -g yt2sheet
+
+Compliance and limitations:
+  The npm archive and standalone bundle root contain THIRD_PARTY_NOTICES.md, bom.cdx.json, and SOURCE_MANIFEST.json.
+  The standalone runtime bundle additionally contains source archives under THIRD_PARTY/sources/.
+  MusicXML is the structured interchange and schema-validation format. SMuFL defines music-font glyph semantics. ISO 216 defines the A4 paper geometry.
+  Recognition accuracy is not guaranteed. Engraving quality is not guaranteed. PDF 2.0 conformance is not guaranteed.
 `;
 
-export async function main(args: readonly string[] = process.argv.slice(2)): Promise<void> {
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+  dependencies: CliMainDependencies = {}
+): Promise<void> {
+  const executeJob = dependencies.runJob ?? runCliJob;
+  const executeDoctor = dependencies.runDoctor ?? runDoctor;
   const parsed = parseCliArguments(args);
   if (parsed.kind === "help") {
     process.stdout.write(usage);
@@ -94,7 +124,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   }
   if (parsed.kind === "doctor") {
     try {
-      const result = await runDoctor({
+      const result = await executeDoctor({
         ...parsed.command,
         cwd: process.cwd(),
         onStage: (stage) => process.stderr.write(`[doctor ${stage.index}/${stage.total}] ${stage.label}\n`)
@@ -120,7 +150,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
 
   try {
     progressReporter.onProgress(0);
-    const result = await runCliJob({
+    const result = await executeJob({
       ...parsed.command,
       signal: controller.signal,
       onProgress: progressReporter.onProgress,
@@ -133,7 +163,8 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     progressReporter.onProgress(100);
     progressReporter.finish();
     installProgressReporter.finish();
-    process.stdout.write(`완료: ${result.outputPath} (${result.pageCount}페이지)\n`);
+    process.stderr.write(formatCliWarnings(result.warnings));
+    process.stdout.write(`${result.outputPath}\n`);
   } catch (error: unknown) {
     const message = error instanceof ScorePipelineError ? error.publicMessage : describeCliError(error);
     progressReporter.finish();
@@ -149,3 +180,8 @@ void main().catch((error: unknown) => {
   process.stderr.write(`실패: ${describeCliError(error)}\n`);
   process.exitCode = 1;
 });
+
+export function formatCliWarnings(warnings: readonly ScoreReviewDecision[] | undefined): string {
+  if (warnings === undefined || warnings.length === 0) return "";
+  return warnings.map((warning) => `경고: ${scoreReviewContract(warning.code).cliMessage}\n`).join("");
+}

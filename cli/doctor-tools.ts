@@ -1,5 +1,8 @@
 import { runProcess, type MediaTools } from "../pipeline/media-tools";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { resolvePackagedBinary } from "./media-tools";
+import { inspectDoctorScoreRuntimes, type DoctorScoreRuntimeOptions } from "./doctor-score-runtimes";
 import type { DoctorCheck } from "./doctor-contract";
 
 const YT_DLP_DOCTOR_TIMEOUT_MS = 20_000;
@@ -11,18 +14,23 @@ export type DoctorTooling = {
   readonly canCheckSource: boolean;
 };
 
+export type DoctorToolInspectionOptions = {
+  readonly packageRoot?: string;
+} & DoctorScoreRuntimeOptions;
+
 type ExecutableCheck = {
   readonly path: string;
   readonly available: boolean;
   readonly check: DoctorCheck;
 };
 
-export async function inspectDoctorTools(cookiesPath?: string): Promise<DoctorTooling> {
-  const [ytDlp, ffmpeg, ffprobe, jsRuntime] = await Promise.all([
+export async function inspectDoctorTools(cookiesPath?: string, options: DoctorToolInspectionOptions = {}): Promise<DoctorTooling> {
+  const [ytDlp, ffmpeg, ffprobe, jsRuntime, scoreRuntimes] = await Promise.all([
     inspectYtDlp(),
     inspectPackagedBinary("ffmpeg", "FFMPEG_PATH"),
     inspectPackagedBinary("ffprobe", "FFPROBE_PATH"),
-    inspectJsRuntime()
+    inspectJsRuntime(),
+    inspectDoctorScoreRuntimes(options.packageRoot ?? defaultPackageRoot(), options)
   ]);
   const tools: MediaTools = {
     ytDlp: ytDlp.path,
@@ -35,10 +43,20 @@ export async function inspectDoctorTools(cookiesPath?: string): Promise<DoctorTo
   };
   return {
     tools,
-    checks: [ytDlp.check, ffmpeg.check, ffprobe.check, jsRuntime.check],
+    checks: [ytDlp.check, ffmpeg.check, ffprobe.check, jsRuntime.check, ...scoreRuntimes.checks],
     canRunLocalSmoke: ffmpeg.available && ffprobe.available,
     canCheckSource: ytDlp.available && jsRuntime.available
   };
+}
+
+function defaultPackageRoot(): string {
+  const moduleRoot = resolve(__dirname, "..");
+  if (!moduleRoot.endsWith("dist-cli")) return moduleRoot;
+  const appRoot = resolve(moduleRoot, "..");
+  const bundleRoot = resolve(appRoot, "..");
+  return existsSync(resolve(bundleRoot, "tools")) && existsSync(resolve(bundleRoot, "scripts", "score-runtime-manifest.json"))
+    ? bundleRoot
+    : appRoot;
 }
 
 async function inspectYtDlp(): Promise<ExecutableCheck> {

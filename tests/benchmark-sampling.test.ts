@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { join } from "node:path";
 import { buildControlSamplingPlan, buildTreatmentTimestamps, type ScoreEventTrace } from "../benchmarks/sampling-plan";
 import { buildFrameExtractionArguments } from "../pipeline/youtube-score-processor";
 
@@ -16,7 +17,7 @@ describe("benchmark sampling plan", () => {
     assert.equal(plan.timestampsMs[0], 0);
     assert.equal(plan.timestampsMs[3_599], 7_198_000);
     assert.deepEqual(buildFrameExtractionArguments("input.mp4", "frames", durationMs / 1_000), [
-      "-hide_banner", "-loglevel", "error", "-i", "input.mp4", "-vf", "fps=0.5", "-q:v", "2", "-frames:v", "3600", "frames\\frame-%06d.jpg"
+      "-hide_banner", "-loglevel", "error", "-i", "input.mp4", "-vf", "fps=0.5", "-q:v", "2", "-frames:v", "3600", join("frames", "frame-%06d.jpg")
     ]);
   });
 

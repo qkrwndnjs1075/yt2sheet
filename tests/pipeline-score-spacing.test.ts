@@ -26,8 +26,8 @@ test("generated PDF keeps score-sheet boundary gaps equal when detected staff ga
     .raw()
     .toBuffer({ resolveWithObject: true });
   const preset = STANDALONE_SCORE_PDF;
-  const contentWidth = preset.rasterWidth - preset.padding * 2;
-  const scanLeft = Math.round(preset.padding + contentWidth * 0.94);
+  const contentWidth = preset.rasterWidth - preset.contentMarginPixels * 2;
+  const scanLeft = Math.round(preset.contentMarginPixels + contentWidth * 0.94);
   const scanRight = Math.min(preset.rasterWidth - 1, scanLeft + Math.round(contentWidth * 0.04));
   assert.equal(info.width, preset.rasterWidth);
   assert.equal(info.height, preset.rasterHeight);

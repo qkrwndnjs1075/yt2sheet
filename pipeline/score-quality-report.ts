@@ -1,4 +1,10 @@
-export const SCORE_EXTRACTION_QUALITY_REPORT_VERSION = "score-extraction-quality-report/1";
+import {
+  createScoreReview,
+  type ScoreReview,
+  type ScoreReviewInput
+} from "./score-review-contract";
+
+export const SCORE_EXTRACTION_QUALITY_REPORT_VERSION = "score-extraction-quality-report/2";
 
 export type FrameIdentifier = `frame-${string}`;
 export type ScoreIdentifier = `score-${string}`;
@@ -41,6 +47,8 @@ export type ScoreExtractionStageDurationsMs = {
 export type ScoreExtractionQualityReportInput = {
   readonly durationsMs: ScoreExtractionStageDurationsMs;
   readonly frames: readonly FrameDisposition[];
+  readonly generatedAt?: string;
+  readonly review?: ScoreReviewInput;
 };
 
 export type ScoreExtractionQualityReport = {
@@ -48,6 +56,8 @@ export type ScoreExtractionQualityReport = {
   readonly qualityClaimsAllowed: false;
   readonly durationsMs: ScoreExtractionStageDurationsMs;
   readonly frames: readonly FrameDisposition[];
+  readonly generatedAt?: string;
+  readonly review: ScoreReview;
 };
 
 export class ScoreQualityReportContractError extends Error {
@@ -75,11 +85,15 @@ export function resolveDuplicateReason(candidates: DuplicateReasonCandidates): D
 export function createScoreExtractionQualityReport(input: ScoreExtractionQualityReportInput): ScoreExtractionQualityReport {
   const durationsMs = canonicalDurations(input.durationsMs);
   const frames = canonicalFrames(input.frames);
+  const review = input.review === undefined ? defaultRasterReview(frames) : createScoreReview(input.review);
+  const generatedAt = input.generatedAt === undefined ? undefined : canonicalGeneratedAt(input.generatedAt);
   return {
     version: SCORE_EXTRACTION_QUALITY_REPORT_VERSION,
     qualityClaimsAllowed: false,
     durationsMs,
-    frames
+    frames,
+    ...(generatedAt === undefined ? {} : { generatedAt }),
+    review
   };
 }
 
@@ -90,13 +104,20 @@ export function serializeScoreExtractionQualityReport(report: ScoreExtractionQua
   if (report.qualityClaimsAllowed !== false) {
     throw new ScoreQualityReportContractError("quality claims must be disabled");
   }
+  if (report.review === undefined) {
+    throw new ScoreQualityReportContractError("v2 report requires a review outcome");
+  }
   const durationsMs = canonicalDurations(report.durationsMs);
   const frames = canonicalFrames(report.frames);
+  const generatedAt = report.generatedAt === undefined ? undefined : canonicalGeneratedAt(report.generatedAt);
+  const review = canonicalReview(report.review);
   return JSON.stringify({
     version: SCORE_EXTRACTION_QUALITY_REPORT_VERSION,
     qualityClaimsAllowed: false,
     durationsMs,
-    frames
+    frames,
+    ...(generatedAt === undefined ? {} : { generatedAt }),
+    review
   });
 }
 
@@ -117,8 +138,40 @@ function canonicalDurations(durationsMs: ScoreExtractionStageDurationsMs): Score
   };
 }
 
+function defaultRasterReview(frames: readonly FrameDisposition[]): ScoreReview {
+  const pageCount = frames.reduce((highestPage, frame) => frame.disposition === "accepted"
+    ? Math.max(highestPage, frame.pageNumber)
+    : highestPage, 0);
+  return createScoreReview({
+    disposition: "raster-fallback",
+    rasterSafe: true,
+    decisions: [{ pageNumber: null, code: "RASTER_FALLBACK_SELECTED", evidence: { pageCount } }]
+  });
+}
+
+function canonicalReview(review: ScoreReview): ScoreReview {
+  const canonical = createScoreReview({
+    disposition: review.disposition,
+    rasterSafe: review.disposition === "raster-fallback",
+    decisions: review.decisions
+  });
+  if (review.selectedLane !== canonical.selectedLane || review.exitCode !== canonical.exitCode) {
+    throw new ScoreQualityReportContractError("review outcome does not match its disposition");
+  }
+  return canonical;
+}
+
+function canonicalGeneratedAt(generatedAt: string): string {
+  const timestamp = Date.parse(generatedAt);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== generatedAt) {
+    throw new ScoreQualityReportContractError("generatedAt must be an ISO-8601 UTC timestamp");
+  }
+  return generatedAt;
+}
+
 function canonicalFrames(frames: readonly FrameDisposition[]): readonly FrameDisposition[] {
   let acceptedScoreCount = 0;
+  let acceptedPageNumber = 0;
   return frames.map((frame, index) => {
     const expectedFrameId = frameIdentifier(index + 1);
     if (frame.frameId !== expectedFrameId) {
@@ -134,6 +187,10 @@ function canonicalFrames(frames: readonly FrameDisposition[]): readonly FrameDis
           throw new ScoreQualityReportContractError(`expected ${expectedScoreId}`);
         }
         assertOneBasedInteger(frame.pageNumber, "accepted frame page number");
+        if (frame.pageNumber < acceptedPageNumber) {
+          throw new ScoreQualityReportContractError("accepted frame page lineage must be monotonic");
+        }
+        acceptedPageNumber = frame.pageNumber;
         return {
           frameId: expectedFrameId,
           disposition: "accepted",

@@ -1,6 +1,6 @@
 {
   "name": "yt2sheet",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Generate sheet-music PDFs from YouTube videos locally.",
   "type": "module",
   "bin": {
@@ -9,28 +9,42 @@
   "files": [
     "dist-cli",
     "scripts/install-cli.mjs",
-    "README.md"
+    "scripts/fetch-score-runtimes.mjs",
+    "scripts/score-runtime-manifest.json",
+    "scripts/score-runtime-staging-io.mjs",
+    "vendor/musicxml-4.0",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "bom.cdx.json",
+    "SOURCE_MANIFEST.json"
   ],
   "scripts": {
     "build": "npm run build:cli",
     "build:bundle": "node scripts/build-bundle.mjs",
     "build:cli": "node scripts/build-cli.mjs",
-    "build:test": "node -e \"require('fs').rmSync('build-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
+    "build:test": "node -e \"require('fs').rmSync('build-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('build-test/package.json', '{\\\"type\\\":\\\"commonjs\\\"}')\"",
     "benchmark:score": "tsx benchmarks/cli.ts",
+    "benchmark:corpus": "tsx benchmarks/generate-local-corpus.ts",
+    "qa:release-candidate": "node scripts/qa/release-candidate-qa.mjs",
+    "release:assemble-candidate": "node scripts/release/assemble-release-candidate.mjs",
+    "release:archive-smoke": "node scripts/release/archive-install-smoke.mjs",
     "postinstall": "node scripts/install-cli.mjs",
     "test": "npm run build:test && node -e \"require('fs').writeFileSync('build-test/package.json', '{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test \"build-test/**/*.test.js\"",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test && npm run build:cli",
+    "verify": "npm run typecheck && npm test && node --test tests/release-candidate-qa.test.mjs && npm run build:cli",
     "prepack": "npm run build:cli"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsx": "^4.23.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "verovio": "6.1.0"
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
+    "fflate": "0.8.3",
     "ffmpeg-static": "^5.3.0",
+    "libxml2-wasm": "0.7.1",
     "pdf-lib": "^1.17.1",
     "pino": "^10.3.1",
     "sharp": "^0.35.3",

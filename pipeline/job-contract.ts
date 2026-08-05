@@ -1,4 +1,5 @@
 import type { ResolvedScoreTimeRange, ScoreTimeRange } from "./score-time-range";
+import type { ScoreReviewDecision } from "./score-review-contract";
 
 export type ScoreJobInput = {
   readonly videoId: string;
@@ -9,7 +10,11 @@ export type ScoreJobInput = {
 export type ScoreJobResult = {
   readonly filePath: string;
   readonly pageCount: number;
+  readonly reviewOutcome?: ScoreJobReviewOutcome;
+  readonly warnings?: readonly ScoreReviewDecision[];
 };
+
+export type ScoreJobReviewOutcome = "structured" | "raster-fallback";
 
 export type ScoreJobProcessorContext = ((progress: number) => void) & {
   readonly onProgress: (progress: number) => void;
