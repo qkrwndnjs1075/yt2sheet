@@ -165,3 +165,4 @@
 - When the user asks not to work in parallel, do not dispatch new parallel agents or split the active release work across branches.
 - When the user reserves QA for themselves, do not run installation, smoke, or manual user-path QA. Limit release verification to the CI status needed to publish, and clearly leave hands-on acceptance to the user.
 - When the user explicitly removes CI from the release path, cancel the active workflow and publish the requested existing tag directly; do not create another tag that would restart the same workflow.
+- A manually created GitHub Release is not installable until the exact `releases/latest/download` archive and `checksums.txt` assets exist under the names the installer requests. Check those URLs before handing off an installer command.
