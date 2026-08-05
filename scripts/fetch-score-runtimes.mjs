@@ -47,6 +47,7 @@ export function assertArchiveListingSafe(listing) {
     if (!match) throw new Error("unparseable archive listing entry rejected");
     const [entry, target] = match[1].split(" -> ", 2);
     const path = entry.replace(/^\.\//, "");
+    if (!path && entry === "./" && target === undefined) continue;
     if (!path || path.startsWith("/") || path.includes("\\") || path.split("/").includes("..")) throw new Error(`archive traversal entry rejected: ${path}`);
     if (target === undefined) continue;
     if (!target || target.startsWith("/") || target.includes("\\")) throw new Error(`archive traversal entry rejected: ${target}`);

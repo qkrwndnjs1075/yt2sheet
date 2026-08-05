@@ -341,6 +341,17 @@ test("accepts an in-archive dpkg relative symlink target", () => {
   assert.doesNotThrow(() => assertArchiveListingSafe(listing));
 });
 
+test("accepts the dpkg archive root entry before contained paths", () => {
+  // Given: dpkg's ordinary directory entry for the archive root.
+  const listing = "drwxr-xr-x root/root 0 2026-07-12 06:18 ./";
+
+  // When: pre-extraction validation reads the listing.
+  const validate = () => assertArchiveListingSafe(listing);
+
+  // Then: the root entry is accepted without weakening child traversal checks.
+  assert.doesNotThrow(validate);
+});
+
 test("rejects a dpkg symlink target that escapes the archive root", () => {
   // Given: a link whose relative target climbs above the archive root.
   const listing = "lrwxrwxrwx root/root 0 2026-07-12 06:18 ./opt/audiveris/bin/Audiveris -> ../../../../../../escape";
