@@ -11,6 +11,7 @@ const harness = resolve(projectRoot, "scripts/qa/release-candidate-qa.mjs");
 const archiveSmoke = resolve(projectRoot, "scripts/release/archive-install-smoke.mjs");
 const candidateAssembler = resolve(projectRoot, "scripts/release/assemble-release-candidate.mjs");
 const candidateVerifier = new URL("../scripts/release/release-candidate-verifier.mjs", import.meta.url).href;
+const syntheticQaEnvironment = { GITHUB_ACTIONS: "false", GITHUB_EVENT_NAME: "local" };
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -27,7 +28,7 @@ function runHarness(root, scenario = "happy", environment = {}) {
   return spawnSync(process.execPath, [harness, "--fixture-dir", `${root}/fixture`, "--artifact-dir", `${root}/evidence`, "--scenario", scenario], {
     cwd: projectRoot,
     encoding: "utf8",
-    env: { ...process.env, ...environment }
+    env: { ...process.env, ...syntheticQaEnvironment, ...environment }
   });
 }
 
@@ -58,7 +59,8 @@ test("release candidate simulation blocks every named rollback condition", () =>
     for (const [scenario, expectedStatus, gate] of scenarios) {
       const result = spawnSync(process.execPath, [harness, "--fixture-dir", `${root}/${scenario}/fixture`, "--artifact-dir", `${root}/${scenario}/evidence`, "--scenario", scenario], {
         cwd: projectRoot,
-        encoding: "utf8"
+        encoding: "utf8",
+        env: { ...process.env, ...syntheticQaEnvironment }
       });
       assert.equal(result.status, expectedStatus, `${scenario}: ${result.stderr}`);
       const output = JSON.parse((expectedStatus === 0 ? result.stdout : result.stderr).trim().split("\n").at(-1));
