@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises";
-import { basename, isAbsolute, join, posix } from "node:path";
+import { isAbsolute, join, posix } from "node:path";
 
 const SPDX_IDS = new Set(["AGPL-3.0-only", "GPL-3.0-only", "GPL-2.0-only WITH Classpath-exception-2.0", "MIT", "OFL-1.1"]);
 const COMPONENT_TYPES = new Set(["application", "framework", "library"]);
@@ -60,7 +60,7 @@ function relativePath(value, label) {
   if (isAbsolute(source) || source.includes("\\") || posix.normalize(source) !== source || source.startsWith("../") || source.includes("/../")) {
     fail(`${label} must be a safe bundle-relative path`);
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+ ()-]*$/.test(basename(source))) fail(`${label} must have a safe filename`);
+  if (source.includes("\0")) fail(`${label} must not contain a null byte`);
   if (/\.pdf$/i.test(source) && /(?:^|[/_. -])(?:iso|iec)(?:[/_. -]|$)/i.test(source)) fail(`${label}: ISO normative PDF content is prohibited`);
   return source;
 }

@@ -227,5 +227,6 @@ test("npm postinstall stages pinned score runtimes and fails outside an approved
   assert.doesNotMatch(bootstrap, /score runtime.*first run/i);
   const packageJson = JSON.parse(packageSource);
   assert.ok(packageJson.files.includes("scripts/fetch-score-runtimes.mjs"));
+  assert.ok(packageJson.files.includes("scripts/score-runtime-fonts.mjs"));
   assert.ok(packageJson.files.includes("scripts/score-runtime-staging-io.mjs"));
 });

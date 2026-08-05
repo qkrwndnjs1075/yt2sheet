@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { cp, mkdir, mkdtemp, opendir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, opendir, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { replaceDirectory } from "./atomic-directory-swap.mjs";
@@ -48,11 +48,18 @@ async function hashFile(path) {
   return hash.digest("hex");
 }
 
+async function hashBundleEntry(path) {
+  const entry = await lstat(path);
+  if (entry.isSymbolicLink()) return createHash("sha256").update(await readlink(path)).digest("hex");
+  if (!entry.isFile()) fail(`unsupported bundle entry: ${path}`);
+  return hashFile(path);
+}
+
 async function verifyFile(bundle, file, label) {
   const path = join(bundle, file.path);
   let actual;
   try {
-    actual = await hashFile(path);
+    actual = await hashBundleEntry(path);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") fail(`${label} file is missing: ${file.path}`);
     throw error;
@@ -63,6 +70,7 @@ async function verifyFile(bundle, file, label) {
 
 async function filesBelow(root, relativeRoot) {
   const found = [];
+  const canonicalRoot = await realpath(root);
   async function visit(relativeDirectory) {
     let directory;
     try {
@@ -77,7 +85,7 @@ async function filesBelow(root, relativeRoot) {
       else if (entry.isFile()) found.push(path);
       else if (entry.isSymbolicLink()) {
         const actual = await realpath(join(root, path));
-        const escape = relative(root, actual);
+        const escape = relative(canonicalRoot, actual);
         if (escape === ".." || escape.startsWith(`..${sep}`)) fail(`bundle symlink escapes root: ${path}`);
         found.push(path);
       }

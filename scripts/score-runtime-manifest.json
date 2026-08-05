@@ -39,6 +39,9 @@
           "family": "Bravura",
           "sourcePath": "fonts/bravura",
           "bundledPath": "tools/musescore/fonts/bravura",
+          "assetName": "Bravura.otf",
+          "url": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/bravura/Bravura.otf",
+          "sha256": "dca2d90c88437a701b1c2e71fa54e76f9fa41d7deee935d74dc871ea66ecfdd2",
           "license": {
             "spdx": "OFL-1.1",
             "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/bravura/OFL.txt",
@@ -49,6 +52,9 @@
           "family": "Leland",
           "sourcePath": "fonts/leland",
           "bundledPath": "tools/musescore/fonts/leland",
+          "assetName": "Leland.otf",
+          "url": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/leland/Leland.otf",
+          "sha256": "293788a40584b1908e3a0f219833f6a13e9a1aaf671e08fd26ad18fad2631b35",
           "license": {
             "spdx": "OFL-1.1",
             "sourceUrl": "https://raw.githubusercontent.com/musescore/MuseScore/7688c005ad963ba09ee715aae53dbc7e8c9d5ef8/fonts/leland/LICENSE.txt",

@@ -33,6 +33,9 @@ const fontSchema = z.object({
   family: z.enum(["Bravura", "Leland"]),
   sourcePath: z.string().min(1),
   bundledPath: z.string().min(1),
+  assetName: z.string().regex(/^[A-Za-z0-9._-]+\.otf$/),
+  url: httpsUrlSchema,
+  sha256: z.string().regex(SHA256),
   license: licenseSchema
 }).strict();
 
@@ -228,12 +231,12 @@ function validatePinnedMetadata(manifest: z.infer<typeof manifestSchema>, contex
   }
   const fonts = manifest.tools.musescore.fonts;
   const expectedFonts = {
-    Bravura: ["fonts/bravura", "tools/musescore/fonts/bravura", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/bravura/OFL.txt`, "THIRD_PARTY/fonts/Bravura-OFL.txt"],
-    Leland: ["fonts/leland", "tools/musescore/fonts/leland", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/leland/LICENSE.txt`, "THIRD_PARTY/fonts/Leland-LICENSE.txt"]
+    Bravura: ["fonts/bravura", "tools/musescore/fonts/bravura", "Bravura.otf", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/bravura/Bravura.otf`, "dca2d90c88437a701b1c2e71fa54e76f9fa41d7deee935d74dc871ea66ecfdd2", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/bravura/OFL.txt`, "THIRD_PARTY/fonts/Bravura-OFL.txt"],
+    Leland: ["fonts/leland", "tools/musescore/fonts/leland", "Leland.otf", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/leland/Leland.otf`, "293788a40584b1908e3a0f219833f6a13e9a1aaf671e08fd26ad18fad2631b35", `https://raw.githubusercontent.com/musescore/MuseScore/${PINNED.musescoreCommit}/fonts/leland/LICENSE.txt`, "THIRD_PARTY/fonts/Leland-LICENSE.txt"]
   } as const;
   for (const font of fonts) {
     const expected = expectedFonts[font.family];
-    if (font.sourcePath !== expected[0] || font.bundledPath !== expected[1] || font.license.spdx !== "OFL-1.1" || font.license.sourceUrl !== expected[2] || font.license.bundledPath !== expected[3]) {
+    if (font.sourcePath !== expected[0] || font.bundledPath !== expected[1] || font.assetName !== expected[2] || font.url !== expected[3] || font.sha256 !== expected[4] || font.license.spdx !== "OFL-1.1" || font.license.sourceUrl !== expected[5] || font.license.bundledPath !== expected[6]) {
       context.addIssue({ code: "custom", path: ["tools", "musescore", "fonts", font.family], message: "font metadata does not match the pinned contract" });
     }
   }

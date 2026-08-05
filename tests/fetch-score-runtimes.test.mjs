@@ -334,6 +334,46 @@ test("rejects a malicious archive listing before extraction", () => {
   assert.throws(() => assertArchiveListingSafe(listing), /traversal/i);
 });
 
+test("accepts an in-archive dpkg relative symlink target", () => {
+  // Given: the official Audiveris DEB link layout, whose target stays inside its legal directory.
+  const listing = "lrwxrwxrwx root/root 0 2026-07-12 06:18 ./opt/audiveris/lib/runtime/legal/java.datatransfer/LICENSE -> ../java.base/LICENSE";
+  // When/Then: pre-extraction validation permits the contained relative link.
+  assert.doesNotThrow(() => assertArchiveListingSafe(listing));
+});
+
+test("rejects a dpkg symlink target that escapes the archive root", () => {
+  // Given: a link whose relative target climbs above the archive root.
+  const listing = "lrwxrwxrwx root/root 0 2026-07-12 06:18 ./opt/audiveris/bin/Audiveris -> ../../../../../../escape";
+  // When/Then: pre-extraction validation remains fail-closed for traversal.
+  assert.throws(() => assertArchiveListingSafe(listing), /traversal/i);
+});
+
+test("stages pinned canonical score fonts for a Windows runtime without bundled font files", async () => {
+  // Given: the real Windows MSI layout, which has a MuseScore executable but no OTF files.
+  const local = await portableFixture("windows-2022-x64");
+  const manifest = JSON.parse(await readFile(local.manifestPath, "utf8"));
+  const fonts = [
+    ["Bravura", "fonts/bravura", "tools/musescore/fonts/bravura", "Bravura.otf", "bravura fixture font"],
+    ["Leland", "fonts/leland", "tools/musescore/fonts/leland", "Leland.otf", "leland fixture font"]
+  ].map(([family, sourcePath, bundledPath, assetName, source]) => ({
+    family, sourcePath, bundledPath, assetName, url: `https://fixtures.invalid/${assetName}`,
+    sha256: createHash("sha256").update(source).digest("hex"), license: { spdx: "OFL-1.1", sourceUrl: "https://fixtures.invalid/LICENSE", bundledPath: `THIRD_PARTY/fonts/${family}-LICENSE.txt` }, source
+  }));
+  manifest.tools.musescore.fonts = fonts.map(({ source, ...font }) => font);
+  await writeFile(local.manifestPath, JSON.stringify(manifest), "utf8");
+  for (const font of fonts) await writeFile(join(local.cacheRoot, cacheFileName(font)), font.source, "utf8");
+
+  // When: the offline Windows staging path constructs the bundle from cached, pinned inputs.
+  await stageScoreRuntimes({
+    manifestPath: local.manifestPath, platformId: local.platformId, targetRoot: local.targetRoot,
+    cacheRoot: local.cacheRoot, offline: true, commands: local.commands, environment: { FIXTURE_ROOT: local.sourceRoot }
+  });
+
+  // Then: the canonical non-symlink font paths required by rendering and compliance are present.
+  assert.equal(await readFile(join(local.targetRoot, "tools/musescore/fonts/bravura/Bravura.otf"), "utf8"), "bravura fixture font");
+  assert.equal(await readFile(join(local.targetRoot, "tools/musescore/fonts/leland/Leland.otf"), "utf8"), "leland fixture font");
+});
+
 test("stages cached signed macOS apps and writes a deterministic inventory", async () => {
   // Given: pinned local cache assets and deterministic signed-app command fixtures.
   const local = await fixture();
@@ -355,6 +395,21 @@ test("stages cached signed macOS apps and writes a deterministic inventory", asy
     await writeFile(join(process.env.SCORE_RUNTIME_EVIDENCE_DIR, "fixture-runtime-inventory.json"), firstInventory, "utf8");
     await writeFile(join(process.env.SCORE_RUNTIME_EVIDENCE_DIR, "fixture-version-probes.json"), `${JSON.stringify(result.versionProbes, null, 2)}\n`, "utf8");
   }
+});
+
+test("accepts a contained app symlink when macOS canonicalizes the temporary directory", async () => {
+  // Given: an app bundle with the same contained relative link shape as Audiveris' JRE notices.
+  const local = await fixture();
+  const contents = join(local.fixtureRoot, "audiveris", "Audiveris.app/Contents");
+  await mkdir(join(contents, "runtime-base"), { recursive: true });
+  await writeFile(join(contents, "runtime-base/NOTICE"), "contained runtime notice\n", "utf8");
+  await symlink("runtime-base/NOTICE", join(contents, "runtime-link"));
+
+  // When: inventory creation resolves the copied app bundle.
+  const result = await stage(local);
+
+  // Then: canonical /private temporary paths still remain inside the staged tools boundary.
+  assert.equal(result.versionProbes.audiveris, "5.11.0");
 });
 
 test("accepts a noninteractive macOS disk-image license before copying the app", async () => {

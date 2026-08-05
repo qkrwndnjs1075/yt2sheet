@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -136,6 +136,55 @@ test("derives release metadata from the pinned runtime manifest and package lock
   assert.equal(sourceManifest.directPackages.length, 8);
   assert.equal(await readFile(join(scenario.output, "THIRD_PARTY/notices/audiveris/runtime/legal/java.base/LICENSE"), "utf8"), "JRE license notice fixture\n");
   assert.equal(await readFile(join(scenario.output, "THIRD_PARTY/notices/musescore/lib/NOTICE"), "utf8"), "native library notice fixture\n");
+  await rm(scenario.root, { recursive: true, force: true });
+});
+
+test("derives compliance metadata when a signed app contains a directory symlink", async () => {
+  // Given: a production-shaped app tree with a contained framework-style directory link.
+  const scenario = await createProductionScenario();
+  await symlink(".", join(scenario.bundle, "tools/audiveris/runtime-link"));
+
+  // When: the production compliance path inventories the signed runtime bundle.
+  const result = runProductionGenerator(scenario);
+
+  // Then: the link is represented by its own target bytes instead of being opened as a directory.
+  assert.equal(result.status, 0, result.stderr);
+  await rm(scenario.root, { recursive: true, force: true });
+});
+
+test("accepts a signed app entry whose filename contains a JVM dollar sign", async () => {
+  // Given: a normal Java class filename from the official Audiveris app bundle.
+  const scenario = await createScenario();
+  const path = "tools/audiveris/CLI$BookTask.class";
+  const bytes = "signed Java class fixture\n";
+  await writeFile(join(scenario.bundle, path), bytes, "utf8");
+  const manifest = JSON.parse(await readFile(scenario.manifest, "utf8"));
+  const audiveris = manifest.components.find((component: { readonly name: string }) => component.name === "Audiveris");
+  audiveris.bundledFiles.push({ path, sha256: createHash("sha256").update(bytes).digest("hex") });
+  await writeFile(scenario.manifest, JSON.stringify(manifest), "utf8");
+
+  // When: the release-facing generator validates the fully mapped app tree.
+  const result = runGenerator(scenario);
+
+  // Then: a normal, non-traversing JVM filename is accepted.
+  assert.equal(result.status, 0, result.stderr);
+  await rm(scenario.root, { recursive: true, force: true });
+});
+
+test("copies a symlinked JVM notice as its verified notice text", async () => {
+  // Given: the contained legal-directory link shape in the official bundled JRE.
+  const scenario = await createProductionScenario();
+  const legal = join(scenario.bundle, "tools/audiveris/runtime/legal");
+  await mkdir(join(legal, "java.datatransfer"), { recursive: true });
+  await writeFile(join(legal, "java.base/NOTICE"), "JRE notice fixture\n", "utf8");
+  await symlink("../java.base/NOTICE", join(legal, "java.datatransfer/NOTICE"));
+
+  // When: production compliance collects embedded runtime notices.
+  const result = runProductionGenerator(scenario);
+
+  // Then: output records the target text under the matching notice path.
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(join(scenario.output, "THIRD_PARTY/notices/audiveris/runtime/legal/java.datatransfer/NOTICE"), "utf8"), "JRE notice fixture\n");
   await rm(scenario.root, { recursive: true, force: true });
 });
 

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { access, chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cacheFileName, existingBytes, parseScoreRuntimeStageManifest, runCommand, sha256File, stagingLimits, treeBytes, verifiedArchive } from "./score-runtime-staging-io.mjs";
+import { stageDeclaredFonts } from "./score-runtime-fonts.mjs";
 
 export { cacheFileName, stagingLimits };
 
@@ -44,10 +45,13 @@ export function assertArchiveListingSafe(listing) {
     if (!line.trim()) continue;
     const match = line.match(/^\S+\s+\S+\s+\d+\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
     if (!match) throw new Error("unparseable archive listing entry rejected");
-    for (const candidate of match[1].split(" -> ")) {
-      const path = candidate.replace(/^\.\//, "");
-      if (path.startsWith("/") || path.includes("\\") || path.split("/").includes("..")) throw new Error(`archive traversal entry rejected: ${path}`);
-    }
+    const [entry, target] = match[1].split(" -> ", 2);
+    const path = entry.replace(/^\.\//, "");
+    if (!path || path.startsWith("/") || path.includes("\\") || path.split("/").includes("..")) throw new Error(`archive traversal entry rejected: ${path}`);
+    if (target === undefined) continue;
+    if (!target || target.startsWith("/") || target.includes("\\")) throw new Error(`archive traversal entry rejected: ${target}`);
+    const resolvedTarget = posix.normalize(posix.join(posix.dirname(path), target));
+    if (resolvedTarget === ".." || resolvedTarget.startsWith("../")) throw new Error(`archive traversal entry rejected: ${target}`);
   }
 }
 
@@ -111,11 +115,10 @@ async function inventoryTree(root) {
     const entry = { path: relative(root, path).split(sep).join("/"), mode: (item.mode & 0o7777).toString(8).padStart(4, "0") };
     if (item.isSymbolicLink()) {
       const link = await readlink(path);
-      const resolved = resolve(dirname(path), link);
       const actual = await realpath(path).catch(() => { throw new Error(`dangling symlink rejected: ${entry.path}`); });
-      const boundary = join(root, "tools");
+      const boundary = await realpath(join(root, "tools"));
       const escape = relative(boundary, actual);
-      if (escape === ".." || escape.startsWith(`..${sep}`) || resolve(resolved) === resolve(boundary)) throw new Error(`symlink traversal rejected: ${entry.path}`);
+      if (escape === ".." || escape.startsWith(`..${sep}`) || actual === boundary) throw new Error(`symlink traversal rejected: ${entry.path}`);
       entries.push({ ...entry, type: "symlink", target: link, sha256: createHash("sha256").update(link).digest("hex") });
     } else if (item.isDirectory()) {
       entries.push({ ...entry, type: "directory" });
@@ -153,7 +156,9 @@ async function commit(stageRoot, targetRoot) {
 
 export async function stageScoreRuntimes(input) {
   const options = { offline: false, commands: defaultCommands, environment: {}, extractionTimeoutMs: 15 * 60 * 1000, ...input, commands: { ...defaultCommands, ...input.commands } };
-  const platform = parseScoreRuntimeStageManifest(await readFile(options.manifestPath, "utf8"), options.platformId);
+  const manifestSource = await readFile(options.manifestPath, "utf8");
+  const platform = parseScoreRuntimeStageManifest(manifestSource, options.platformId);
+  const manifest = JSON.parse(manifestSource);
   await mkdir(dirname(resolve(options.targetRoot)), { recursive: true });
   const stageRoot = await mkdtemp(join(dirname(resolve(options.targetRoot)), ".score-runtime-stage-"));
   try {
@@ -166,6 +171,7 @@ export async function stageScoreRuntimes(input) {
       if (!executableStat.isFile()) throw new Error(`staged executable is not a file: ${runtime.stagedExecutable}`);
       if (platform.os !== "windows" && (executableStat.mode & 0o111) === 0) throw new Error(`staged executable lost executable bit: ${runtime.stagedExecutable}`);
     }
+    await stageDeclaredFonts({ manifest, stageRoot, options });
     const versionProbes = {};
     const runtimeTimeout = AbortSignal.timeout(options.extractionTimeoutMs);
     const runtimeSignal = options.signal ? AbortSignal.any([options.signal, runtimeTimeout]) : runtimeTimeout;

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { access, cp, mkdir, opendir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, opendir, readFile, readlink, realpath, rename, rm, writeFile } from "node:fs/promises";
 import https from "node:https";
 import { basename, dirname, join, posix, relative, sep } from "node:path";
 import { Transform } from "node:stream";
@@ -41,6 +41,13 @@ async function sha256(path) {
   const hash = createHash("sha256");
   await pipeline(createReadStream(path), hash);
   return hash.digest("hex");
+}
+
+async function sha256BundleEntry(path) {
+  const entry = await lstat(path);
+  if (entry.isSymbolicLink()) return createHash("sha256").update(await readlink(path)).digest("hex");
+  if (!entry.isFile()) fail(`unsupported staged runtime entry: ${path}`);
+  return sha256(path);
 }
 
 async function download(url, destination, limit, redirects = 0) {
@@ -102,6 +109,7 @@ async function materialize(bundle, path, url, limit, offline) {
 
 async function filesBelow(bundle, root) {
   const found = [];
+  const canonicalBundle = await realpath(bundle);
   async function visit(relativeDirectory) {
     const directory = await opendir(join(bundle, relativeDirectory));
     for await (const entry of directory) {
@@ -110,9 +118,9 @@ async function filesBelow(bundle, root) {
       else if (entry.isFile()) found.push({ path, sha256: await sha256(join(bundle, path)) });
       else if (entry.isSymbolicLink()) {
         const actual = await realpath(join(bundle, path));
-        const escape = relative(bundle, actual);
+        const escape = relative(canonicalBundle, actual);
         if (escape === ".." || escape.startsWith(`..${sep}`)) fail(`staged runtime symlink escapes bundle: ${path}`);
-        found.push({ path, sha256: await sha256(join(bundle, path)) });
+        found.push({ path, sha256: await sha256BundleEntry(join(bundle, path)) });
       }
       else fail(`unsupported staged runtime entry: ${path}`);
     }
@@ -127,9 +135,12 @@ async function materializeNotices(bundle, tool, files) {
     if (!NOTICE_NAMES.test(basename(file.path))) continue;
     const relative = file.path.slice(`tools/${tool}/`.length);
     const outputPath = posix.join("THIRD_PARTY/notices", tool, relative);
+    const sourcePath = join(bundle, file.path);
+    const source = (await lstat(sourcePath)).isSymbolicLink() ? await realpath(sourcePath) : sourcePath;
+    if (!(await lstat(source)).isFile()) fail(`runtime notice must resolve to a file: ${file.path}`);
     await mkdir(dirname(join(bundle, outputPath)), { recursive: true });
-    await cp(join(bundle, file.path), join(bundle, outputPath));
-    notices.push({ path: outputPath, sha256: file.sha256 });
+    await cp(source, join(bundle, outputPath));
+    notices.push({ path: outputPath, sha256: await sha256(source) });
   }
   return notices;
 }

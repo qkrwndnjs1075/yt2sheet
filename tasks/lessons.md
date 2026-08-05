@@ -158,3 +158,8 @@
 
 - An npm package can intentionally carry root notices, SBOM, and source metadata while downloading pinned runtime apps whose fonts live inside the app bundle; doctor must branch on the declared package kind instead of treating missing standalone `THIRD_PARTY` assets as an install failure.
 - Official runtime version probes may be strict banners rather than bare strings. Accept only the documented tool-specific banner on the expected channel, preserve inventory equality, and continue rejecting conflicting stderr or forged output.
+
+# 2026-08-06 - Honor the requested release path
+
+- When the user explicitly requests direct commit, push, and release, do not create a PR. Treat earlier PRs as historical context only, and keep the current delivery path as direct `main` push plus tag release.
+- When the user asks not to work in parallel, do not dispatch new parallel agents or split the active release work across branches.

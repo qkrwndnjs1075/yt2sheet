@@ -1,6 +1,6 @@
 {
   "name": "yt2sheet",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "description": "Generate sheet-music PDFs from YouTube videos locally.",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
     "dist-cli",
     "scripts/install-cli.mjs",
     "scripts/fetch-score-runtimes.mjs",
+    "scripts/score-runtime-fonts.mjs",
     "scripts/score-runtime-manifest.json",
     "scripts/score-runtime-staging-io.mjs",
     "vendor/musicxml-4.0",
