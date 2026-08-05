@@ -25,6 +25,13 @@ jobs:
       - name: Install dependencies without pretending tools exist
         env: { YT2SHEET_SKIP_TOOL_INSTALL: "1" }
         run: npm ci
+      - name: Install benchmark media tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Prepare generated corpus for authoritative tests
+        run: |
+          corpus_root="$RUNNER_TEMP/task-14-score-corpus"
+          npm run benchmark:corpus -- "$corpus_root"
+          echo "YT2SHEET_GENERATED_CORPUS_ROOT=$corpus_root" >> "$GITHUB_ENV"
       - name: Authoritative repository verification
         run: |
           set -o pipefail

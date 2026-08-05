@@ -11,8 +11,9 @@ import { LocalVideoScoreProcessor } from "../pipeline/youtube-score-processor";
 
 const digest = "a".repeat(64);
 const reference = { relativePath: "x", sha256: digest };
-const GENERATED_MANIFEST = resolve(".omo/evidence/standards-based-score-review-output/task-14-standards-based-score-review-output/corpus/manifest.json");
-const GENERATED_MEDIA_ROOT = resolve(".omo/evidence/standards-based-score-review-output/task-14-standards-based-score-review-output/corpus/media");
+const GENERATED_CORPUS_ROOT = resolve(process.env.YT2SHEET_GENERATED_CORPUS_ROOT?.trim() || ".omo/evidence/standards-based-score-review-output/task-14-standards-based-score-review-output/corpus");
+const GENERATED_MANIFEST = join(GENERATED_CORPUS_ROOT, "manifest.json");
+const GENERATED_MEDIA_ROOT = join(GENERATED_CORPUS_ROOT, "media");
 
 test("generated corpus tags match rendered variants and cover every required test condition", async () => {
   const manifest = JSON.parse(await readFile(GENERATED_MANIFEST, "utf8")) as {
