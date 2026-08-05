@@ -1,14 +1,12 @@
 #!/bin/sh
 set -eu
 
-release_tag="${YT2SHEET_RELEASE_TAG:-}"
+release_tag="${YT2SHEET_RELEASE_TAG:-cli-v0.2.15}"
 repository="${YT2SHEET_REPOSITORY:-qkrwndnjs1075/yt2sheet}"
 if [ -n "${YT2SHEET_RELEASE_BASE_URL:-}" ]; then
   base_url="$YT2SHEET_RELEASE_BASE_URL"
-elif [ -n "$release_tag" ]; then
-  base_url="https://github.com/$repository/releases/download/$release_tag"
 else
-  base_url="https://github.com/$repository/releases/latest/download"
+  base_url="https://github.com/$repository/releases/download/$release_tag"
 fi
 base_url="${base_url%/}"
 

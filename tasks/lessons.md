@@ -166,3 +166,7 @@
 - When the user reserves QA for themselves, do not run installation, smoke, or manual user-path QA. Limit release verification to the CI status needed to publish, and clearly leave hands-on acceptance to the user.
 - When the user explicitly removes CI from the release path, cancel the active workflow and publish the requested existing tag directly; do not create another tag that would restart the same workflow.
 - A manually created GitHub Release is not installable until the exact `releases/latest/download` archive and `checksums.txt` assets exist under the names the installer requests. Check those URLs before handing off an installer command.
+
+# 2026-08-06 - Isolate a release fallback from the unresolved runtime defect
+
+- When a released media-processing runtime regresses and the user explicitly names a prior working version, pin only the affected installer default to that verified tag while preserving the explicit tag override. Do not present that temporary fallback as a root-cause fix for the runtime defect.
