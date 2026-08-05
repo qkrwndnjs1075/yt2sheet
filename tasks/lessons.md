@@ -164,3 +164,4 @@
 - When the user explicitly requests direct commit, push, and release, do not create a PR. Treat earlier PRs as historical context only, and keep the current delivery path as direct `main` push plus tag release.
 - When the user asks not to work in parallel, do not dispatch new parallel agents or split the active release work across branches.
 - When the user reserves QA for themselves, do not run installation, smoke, or manual user-path QA. Limit release verification to the CI status needed to publish, and clearly leave hands-on acceptance to the user.
+- When the user explicitly removes CI from the release path, cancel the active workflow and publish the requested existing tag directly; do not create another tag that would restart the same workflow.
