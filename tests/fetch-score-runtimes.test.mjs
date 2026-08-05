@@ -99,6 +99,11 @@ case "$archive" in
   *) cp -R "$FIXTURE_ROOT/musescore/MuseScore Studio.app" "$mountpoint/" ;;
 esac
 `);
+  const fakeDitto = join(root, "ditto");
+  await writeExecutable(fakeDitto, `#!/bin/sh
+set -eu
+cp -R "$1" "$2"
+`);
   const fakeCodesign = join(root, "codesign");
   const fakeSpctl = join(root, "spctl");
   const signatureCommand = `#!/bin/sh
@@ -112,7 +117,7 @@ if [ "\${SIGNATURE_FAIL:-0}" = "1" ]; then exit 1; fi
 
   return {
     root, cacheRoot, fixtureRoot, targetRoot, manifestPath,
-    commands: { hdiutil: fakeHdiutil, ditto: "/usr/bin/ditto", codesign: fakeCodesign, spctl: fakeSpctl }
+    commands: { hdiutil: fakeHdiutil, ditto: fakeDitto, codesign: fakeCodesign, spctl: fakeSpctl }
   };
 }
 
