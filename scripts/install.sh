@@ -206,23 +206,28 @@ mkdir -p "$bin_dir"
 install_step "PATH 등록 중"
 ln -sfn "$install_root/bin/yt2" "$bin_dir/yt2"
 
+profile="${YT2SHEET_PROFILE:-}"
+if [ -z "$profile" ]; then
+  case "${SHELL:-}" in
+    */zsh) profile="$HOME/.zprofile" ;;
+    *) profile="$HOME/.profile" ;;
+  esac
+fi
+
 case ":${PATH:-}:" in
   *":$bin_dir:"*)
     ;;
   *)
-    profile="${YT2SHEET_PROFILE:-}"
-    if [ -z "$profile" ]; then
-      case "${SHELL:-}" in
-        */zsh) profile="$HOME/.zprofile" ;;
-        *) profile="$HOME/.profile" ;;
-      esac
-    fi
     path_line="export PATH=\"$bin_dir:\$PATH\""
     if [ ! -f "$profile" ] || ! grep -Fqx "$path_line" "$profile"; then
       printf '\n%s\n' "$path_line" >> "$profile"
     fi
     ;;
 esac
+alias_line="alias yt2=\"$bin_dir/yt2\""
+if [ ! -f "$profile" ] || ! grep -Fqx "$alias_line" "$profile"; then
+  printf '\n%s\n' "$alias_line" >> "$profile"
+fi
 export PATH="$bin_dir:${PATH:-}"
 
 install_step "설치 파일 확인 중"

@@ -19,6 +19,7 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.match(shell, /runtime\/bin\/node app\/dist-cli\/cli\/index\.js bin\/yt2 tools\/yt-dlp VERSION/, "the legacy contract must still require the runnable core bundle files");
   assert.doesNotMatch(powershell, /cli-v0\.2\.5/, "the raw installer command must not need a release-specific update");
   assert.match(shell, /releases\/download\/\$release_tag/, "the Unix installer must keep an explicit release-tag URL for overrides");
+  assert.match(shell, /alias_line="alias yt2=\\"\$bin_dir\/yt2\\""/, "the Unix installer must keep its standalone yt2 ahead of a conflicting global shim");
   assert.match(powershell, /releases\/download\/\$ReleaseTag/, "an explicit PowerShell release tag must remain reproducible");
   assert.match(powershell, /\(\?:release-assets\/\)\?/, "the PowerShell installer must accept GitHub Release checksum paths");
   assert.match(shell, /\$2 == "release-assets\/" name/, "the Unix installer must accept GitHub Release checksum paths");
