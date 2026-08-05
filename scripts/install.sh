@@ -136,7 +136,17 @@ if tar -tzf "$archive_path" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
   exit 1
 fi
 tar -xzf "$archive_path" -C "$staging_root"
-for required_path in runtime/bin/node app/dist-cli/cli/index.js bin/yt2 tools/yt-dlp tools/audiveris tools/musescore tools/score-runtime-inventory.json THIRD_PARTY VERSION THIRD_PARTY_NOTICES.md bom.cdx.json SOURCE_MANIFEST.json COMPLIANCE_SUMMARY.json; do
+legacy_bundle=0
+case "$release_tag" in
+  cli-v0.2.13)
+    legacy_bundle=1
+    required_paths="runtime/bin/node app/dist-cli/cli/index.js bin/yt2 tools/yt-dlp VERSION"
+    ;;
+  *)
+    required_paths="runtime/bin/node app/dist-cli/cli/index.js bin/yt2 tools/yt-dlp tools/audiveris tools/musescore tools/score-runtime-inventory.json THIRD_PARTY VERSION THIRD_PARTY_NOTICES.md bom.cdx.json SOURCE_MANIFEST.json COMPLIANCE_SUMMARY.json"
+    ;;
+esac
+for required_path in $required_paths; do
   if [ ! -e "$staging_root/$required_path" ]; then
     printf '완전하지 않은 yt2 번들입니다: %s\n' "$required_path" >&2
     exit 1
@@ -147,6 +157,7 @@ if [ ! -x "$runtime_node" ]; then
   printf '번들 Node 런타임을 실행할 수 없습니다.\n' >&2
   exit 1
 fi
+if [ "$legacy_bundle" -eq 0 ]; then
 # The validator is literal JavaScript; shell expansion would corrupt template expressions.
 # shellcheck disable=SC2016
 validation_output="$("$runtime_node" -e '
@@ -183,6 +194,7 @@ process.stdout.write("YT2SHEET_BUNDLE_VALID=1");
 if [ "$validation_output" != "YT2SHEET_BUNDLE_VALID=1" ]; then
   printf '번들 Node 런타임이 검증을 완료하지 못했습니다.\n' >&2
   exit 1
+fi
 fi
 install_step "파일 설치 중"
 if [ -e "$install_root" ] || [ -L "$install_root" ]; then

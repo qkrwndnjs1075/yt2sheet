@@ -14,6 +14,9 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
   assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
   assert.match(powershell, /releases\/latest\/download/, "the raw installer must resolve the latest published CLI release without a version pin");
   assert.match(shell, /release_tag="\$\{YT2SHEET_RELEASE_TAG:-cli-v0\.2\.13\}"/, "the Unix installer must default to the requested fallback release");
+  assert.match(shell, /legacy_bundle=1/, "the Unix installer must recognize the requested legacy fallback bundle");
+  assert.match(shell, /cli-v0\.2\.13\)/, "only the requested fallback tag may use the legacy bundle contract");
+  assert.match(shell, /runtime\/bin\/node app\/dist-cli\/cli\/index\.js bin\/yt2 tools\/yt-dlp VERSION/, "the legacy contract must still require the runnable core bundle files");
   assert.doesNotMatch(powershell, /cli-v0\.2\.5/, "the raw installer command must not need a release-specific update");
   assert.match(shell, /releases\/download\/\$release_tag/, "the Unix installer must keep an explicit release-tag URL for overrides");
   assert.match(powershell, /releases\/download\/\$ReleaseTag/, "an explicit PowerShell release tag must remain reproducible");
