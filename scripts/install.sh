@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-release_tag="${YT2SHEET_RELEASE_TAG:-cli-v0.2.15}"
+release_tag="${YT2SHEET_RELEASE_TAG:-cli-v0.2.13}"
 repository="${YT2SHEET_REPOSITORY:-qkrwndnjs1075/yt2sheet}"
 if [ -n "${YT2SHEET_RELEASE_BASE_URL:-}" ]; then
   base_url="$YT2SHEET_RELEASE_BASE_URL"

@@ -13,7 +13,7 @@ test("raw PowerShell installer is pipe-safe and surfaces staged progress", async
 
   assert.notEqual(powershell.charCodeAt(0), 0xFEFF, "a UTF-8 BOM becomes part of `param` when the raw installer is piped to iex");
   assert.match(powershell, /releases\/latest\/download/, "the raw installer must resolve the latest published CLI release without a version pin");
-  assert.match(shell, /release_tag="\$\{YT2SHEET_RELEASE_TAG:-cli-v0\.2\.15\}"/, "the Unix installer must default to the verified download-capable release");
+  assert.match(shell, /release_tag="\$\{YT2SHEET_RELEASE_TAG:-cli-v0\.2\.13\}"/, "the Unix installer must default to the requested fallback release");
   assert.doesNotMatch(powershell, /cli-v0\.2\.5/, "the raw installer command must not need a release-specific update");
   assert.match(shell, /releases\/download\/\$release_tag/, "the Unix installer must keep an explicit release-tag URL for overrides");
   assert.match(powershell, /releases\/download\/\$ReleaseTag/, "an explicit PowerShell release tag must remain reproducible");

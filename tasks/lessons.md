@@ -170,3 +170,4 @@
 # 2026-08-06 - Isolate a release fallback from the unresolved runtime defect
 
 - When a released media-processing runtime regresses and the user explicitly names a prior working version, pin only the affected installer default to that verified tag while preserving the explicit tag override. Do not present that temporary fallback as a root-cause fix for the runtime defect.
+- When the user explicitly says to skip verification for an urgent version fallback, apply only the named tag change and state that it was not re-validated.
