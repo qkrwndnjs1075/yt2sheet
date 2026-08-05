@@ -1,22 +1,24 @@
-# Release cli-v0.2.24 (2026-08-05)
+# Release cli-v0.2.25 (2026-08-05)
 
 ## Plan
 
-- [x] Prepare the 0.2.24 patch version and release-fix worktree while preserving local PDF/npm artifacts.
+- [x] Prepare the 0.2.25 patch version and release-fix worktree while preserving local PDF/npm artifacts.
 - [x] Diagnose the failed cli-v0.2.19 workflow on a clean checkout.
 - [x] Fix Linux runtime target selection, generated-corpus setup, and benchmark media dependencies.
 - [x] Fix release-candidate QA environment inheritance without weakening its production guard.
 - [x] Fix the macOS runtime fixture's cross-host `ditto` command boundary.
 - [x] Fix the Linux x64 runtime-gate OOM caused by a host-mismatched binary `deepEqual` assertion.
+- [x] Fix the process-tree fixture's cross-platform file-publication race and startup budget.
 - [x] Run the release verification and exact package/CLI smoke checks.
 - [x] Commit the reviewed source, tests, workflow, and task evidence.
-- [ ] Push the commit directly to `main` and push the cli-v0.2.24 tag.
+- [ ] Push the commit directly to `main` and push the cli-v0.2.25 tag.
 - [ ] Confirm the GitHub release assets and the installed user path.
 
 ## Review
 
 - Scope: standards-based score review, high-resolution Audiveris transcription input, runtime staging/doctor compatibility, and their regression/evidence records.
 - Linux runtime-gate repair: same-host Linux bundles copy the real Node executable; the test now selects that expected path and compares streaming SHA-256 digests, while cross-host-only guard cases are explicitly skipped on Linux x64. Exact Node 22 x64 Docker and macOS focused evidence pass.
+- Process-tree fixture repair: PID JSON is published via temporary-file rename, readiness uses bounded path polling instead of platform-specific watch events, and the timeout fixture allows 1 second for cross-host Node startup. Node 22 Linux x64 repeats pass 10/10.
 - Excluded: `.DS_Store`, `yt2sheet-0.2.18.tgz`, generated PDF outputs from the user's local smoke test, and unpublished failed tags `cli-v0.2.19`, `cli-v0.2.20`, and `cli-v0.2.21`, `cli-v0.2.22`.
 
 # Audiveris OMR probe diagnosis and repair (2026-08-05)

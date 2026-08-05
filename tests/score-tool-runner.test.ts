@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { watch } from "node:fs";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
@@ -129,7 +128,7 @@ it("times out and kills a child process tree before removing its workspace", asy
   const pidFile = join(workspaceRoot, "timeout-pids.json");
   const ready = waitForFile(workspaceRoot, pidFile);
   // When: the bounded deadline expires.
-  const pending = runNode(workspaceRoot, processTreeScript(), [pidFile], { timeoutCeilingMs: 200 });
+  const pending = runNode(workspaceRoot, processTreeScript(), [pidFile], { timeoutCeilingMs: 1_000 });
   await ready;
   const pids = parsePids(await readFile(pidFile, "utf8"));
   const result = await pending;
@@ -191,7 +190,7 @@ function runNode(root: string, script: string, args: readonly string[] = [], opt
   return runScoreTool({ tool: "musescore", executable: process.execPath, args: ["-e", script, ...args], pageCount: 1, workspaceRoot: root, ...options });
 }
 function processTreeScript(): string {
-  return 'const fs=require("node:fs"),cp=require("node:child_process"); const file=process.argv[1]; const gc=cp.spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"}); fs.writeFileSync(file,JSON.stringify({parent:process.pid,grandchild:gc.pid,workspace:process.cwd()})); setInterval(()=>{},1000);';
+  return 'const fs=require("node:fs"),cp=require("node:child_process"); const file=process.argv[1]; const gc=cp.spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"}); const temporary=`${file}.tmp-${process.pid}`; fs.writeFileSync(temporary,JSON.stringify({parent:process.pid,grandchild:gc.pid,workspace:process.cwd()})); fs.renameSync(temporary,file); setInterval(()=>{},1000);';
 }
 function parseRecord(json: string): Record<string, unknown> {
   const value: unknown = JSON.parse(json);
@@ -225,17 +224,25 @@ function isAlive(pid: number): boolean {
     throw error;
   }
 }
-function waitForFile(directory: string, expectedPath: string): Promise<void> {
+function waitForFile(_directory: string, expectedPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const watcher = watch(directory, (_event, filename) => {
-      if (filename === null || join(directory, String(filename)) !== expectedPath) return;
-      watcher.close();
+    let settled = false;
+    const finish = (error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
       clearTimeout(timer);
-      resolve();
-    });
-    const timer = setTimeout(() => {
-      watcher.close();
-      reject(new Error(`Timed out waiting for ${expectedPath}`));
-    }, 5_000);
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const check = (): void => {
+      void access(expectedPath).then(() => finish(), (error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+        finish(error);
+      });
+    };
+    const poll = setInterval(check, 10);
+    const timer = setTimeout(() => finish(new Error(`Timed out waiting for ${expectedPath}`)), 5_000);
+    check();
   });
 }
